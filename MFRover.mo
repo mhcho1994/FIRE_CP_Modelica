@@ -233,30 +233,37 @@ package RoverExample
         experiment(StartTime = 0, StopTime = 1, Tolerance = 1e-06, Interval = 0.002));
     end Controller;
     
-    model Rover                                                                   // a multi-fidelity rover model
+    model Rover
+      // a multi-fidelity rover model
+      
       // load packages
       import RoverExample.Constants;
+      
       // setup fidelity level and load different fidelity rover model
       parameter Integer fidelity = 2; 
       RoverLowFidelity rover_3d;
       RoverHighFidelity rover_8d;
+      
       // system parameters
       parameter Real sample_interval = 0.1;                     // [sec] pwm sample interval
-      parameter Real delta_max = 25.28*Constants.d2r;                             // [rad] max steering angle
+      parameter Real delta_max = 25.28*Constants.d2r;           // [rad] max steering angle
+      
       // targeted acoustic attack model and parameters
-      parameter Real W = 100;                                     // [W] power of speaker
+      parameter Real W = 0;                                     // [W] power of speaker
       parameter Real dist = 0.01;                               // [m] distance to speaker
       parameter Real psi_ac = 80.0*Constants.d2r;               // [rad] speaker direction
       parameter Real w_ac = 15.0002e+3*2*Constants.PI;          // [rad/s] acoustic attack frequency
       parameter Real epsilon = 0.0*Constants.d2r;               // [rad] misalignment of gyroscope, reference - 1deg
-      parameter Real phi_0 = 30*Constants.d2r;                      // [rad] phase shift for acoustic noise compared to driving signal
+      parameter Real phi_0 = 30*Constants.d2r;                  // [rad] phase shift for acoustic noise compared to driving signal
       GyroAcousticAtk gyroatk(W=W, dist=dist, psi_ac=psi_ac, w_ac=w_ac, epsilon=epsilon, phi_0=phi_0);
+      
       // input: two PWM channels
       // channel 1: pwm duty cycle for throttle (0: 0, v_max: 1)
       // channel 2: steering command (-1: -delta_max, 1: delta_max)
       Connectors.PwmBus pwm annotation(
         Placement(transformation(origin = {-124, -2}, extent = {{-22, -22}, {22, 22}}), iconTransformation(origin = {-129.4, 21.125}, extent = {{-28.6, -17.875}, {28.6, 17.875}})));
       Connectors.RealInput pwm_steering, pwm_throttle;
+      
       // output
       // local coordinates, body velocity, body acceleration, roll/pitch angle, heading, roll/pitch/yaw rate, rollover signal
       Connectors.SensorBus sensor annotation(
@@ -362,23 +369,29 @@ package RoverExample
     
     end Rover;
 
-    model RoverLowFidelity                                                   // low-fidelity rover model
+    model RoverLowFidelity
+      // low-fidelity rover model: emulate rover kinematics (without ground friction, motor/actuator model)
+    
       // load packages
       import RoverExample.Constants;
       import RoverExample.Utils.clip;
       import RoverExample.Utils.eul2rot;
+      
       // parameters
       parameter Real l_total = 0.278;           // [m] distance from rear axle to front axle
       parameter Real track_width = 0.234;       // [m] track width
       parameter Real cg_height = 0.064;         // [m] height to center of gravity
       parameter Real phi_t = 0;                 // [m] terrain angle
-      parameter Real v_max = 15.0;                                // [m/s] max forward velocity
+      parameter Real v_max = 15.0;              // [m/s] max forward velocity
+      
       // calculated from parameters
       Real phi_f;                               // [rad] angle between the line from end of rie to cg and the ground
-      Real length_to_tire;                                        // [m] distance from cg to tire end
+      Real length_to_tire;                      // [m] distance from cg to tire end
+      
       // inputs
       discrete Real D(start=0);
       discrete Real delta_cmd(start=0);
+      
       // states
       Real x(start=0,fixed=false), y(start=0,fixed=false), z(start=0,fixed=false);            // [m] position in inertial coordinates
       Real vx(start=0,fixed=false), vy(start=0,fixed=false), vz(start=0,fixed=false);         // [m/s] velocity in body coordinates
@@ -387,15 +400,17 @@ package RoverExample
       Real p(start=0,fixed=false), q(start=0,fixed=false), r(start=0,fixed=false);            // [rad/s] angular velocity
       Real turn_radius(start=1000);                                                           // [m] turning radius
       Integer rollover_detected(start=0);                                                     // [-] rollover detection signal
-      Real mx(start=0,fixed=false), my(start=0,fixed=false), mz(start=0,fixed=false);                           // [T] magnetic field measured from magnetometer
+      Real mx(start=0,fixed=false), my(start=0,fixed=false), mz(start=0,fixed=false);         // [T] magnetic field measured from magnetometer
+      
       // internal states
       Real thr, delta;
+      
       // accelerometer specific force compensation
       Real specific_g[3](start={0.0, 0.0, Constants.g}, each fixed=false);      // [m/s^2] gravity specific force
-      Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);  
-// [-] coordinate transform from NED to body
-      // load emi model
-      EMILowFidelity emi;
+      Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);  // [-] coordinate transform from NED to body
+      
+      // load magnetometer model
+      Magnetometer emi;
     
     equation
       thr = v_max*pre(D);
@@ -700,7 +715,7 @@ package RoverExample
       
     end RoverHighFidelity;
 
-    model EMIHighFidelity                                                 // high-fidelity emi model
+    model EMIVulnerability                                                 // high-fidelity emi model
       // load packages
       import RoverExample.Utils.cross3;
       import RoverExample.Utils.dot3;
@@ -720,30 +735,21 @@ package RoverExample
       parameter Real wire_dir[3] = {-1, 0, 0};      // [-] current flowing wire direction
       parameter Real x_wire[3] = {0.0, 0.0, -0.01}; // [m] relative position from current-flowing wire to magnetometer
       parameter Real dist_wire = sqrt(x_wire[1]^2+x_wire[2]^2+x_wire[3]^2);     // [m] given distance from wire
-      parameter Real b_earth0 = 3.12e-5;            // [T] mean magnetic field strength at the magnetic equator on the Earth's surface
-      parameter Real lat0 = 40.42244465750271*Constants.d2r;                    // [rad] latitude of the rover
       // input: current flowing on motor rotational speed of stator
       input Real Iq;                      // [A] current flowing on power line to motor
       input Real lambda;                  // [rad] motor stator position
-      input Real phi, theta, psi;                           // [rad] vehicle attitude
       // states & outputs for motor, cable harnesses magnetic field
       Real b_motor[3](start={0, 0, 0},each fixed=false); // [T] magnetic flux density
       Real b_wire[3](start={0, 0, 0},each fixed=false);  // [T] magnetic flux density
-      Real b_earth[3](start={0, 0, 0},each fixed=false); // [T] magnetic flux density
-      Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);      
-    // [-] coordinate transform from NED to body
 equation
 // compute magnetic field intensity
       b_motor = eta_motor*nu0/(4*Constants.PI)*(-(mag_motor+Nw*Iq*A)*{0,cos(lambda),sin(lambda)}/dist_motor^3+3*dot3((mag_motor+Nw*Iq*A)*{0,cos(lambda),sin(lambda)},x_motor)*x_motor/dist_motor^5);
       b_wire = nu0*Iq/(2*Constants.PI)/dist_wire^2*cross3(wire_dir,x_wire);
-      C_n2b = transpose(eul2rot({phi, theta, psi}));
-      for i in 1:3 loop
-        b_earth[i] = C_n2b[i,1]*(b_earth0*sin(Constants.PI/2-lat0))+C_n2b[i,3]*(-2*b_earth0*cos(Constants.PI/2-lat0));
-      end for;
     
-    end EMIHighFidelity;
+    end EMIVulnerability;
 
-    model EMILowFidelity                                                 // low-fidelity emi model
+    model Magnetometer
+      // magnetometer model
       // load packages
       import RoverExample.Utils.cross3;
       import RoverExample.Utils.dot3;
@@ -751,36 +757,40 @@ equation
       import RoverExample.Constants;
       import Modelica.Math.sin;
       import Modelica.Math.cos;
+      
       // parameters for magnetic field model
-      parameter Real b_earth0 = 3.12e-5;                   // [T] mean magnetic field strength at the magnetic equator on the Earth's surface
-      parameter Real lat0 = 40.42244465750271*Constants.d2r;                    // [rad] latitude of the rover
+      parameter Real b_earth0 = 3.12e-5;                      // [T] mean magnetic field strength at the magnetic equator on the Earth's surface
+      parameter Real lat0 = 40.42244465750271*Constants.d2r;  // [rad] latitude of the rover
+      
       // input: current flowing on motor rotational speed of stator
-      input Real phi, theta, psi;                           // [rad] vehicle attitude
+      input Real phi, theta, psi;                             // [rad] vehicle attitude
+      
       // states & outputs for motor, cable harnesses magnetic field
       Real b_earth[3](start={0, 0, 0},each fixed=false);                        // [T] magnetic flux density
-      Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);      
-    // [-] coordinate transform from NED to body
-equation
-// compute magnetic field intensity
+      Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);  // [-] coordinate transform from NED to body
+
+    equation
+      // compute magnetic field intensity
       C_n2b = transpose(eul2rot({phi, theta, psi}));
       for i in 1:3 loop
         b_earth[i] = C_n2b[i,1]*(b_earth0*sin(Constants.PI/2-lat0))+C_n2b[i,3]*(-2*b_earth0*cos(Constants.PI/2-lat0));
       end for;
 
-    end EMILowFidelity;
+    annotation(
+        Icon(graphics = {Polygon(origin = {-13, 14}, lineThickness = 1, points = {{-27, 20}, {-27, -24}, {-27, -34}, {-19, -46}, {-7, -54}, {33, -54}, {45, -46}, {53, -34}, {53, 20}, {37, 20}, {37, -30}, {27, -40}, {1, -40}, {-11, -30}, {-11, 20}, {-21, 20}, {-27, 20}}), Rectangle(origin = {-32, 27}, fillPattern = FillPattern.Solid, extent = {{-8, 7}, {8, -7}}), Rectangle(origin = {32, 27}, fillPattern = FillPattern.Solid, extent = {{-8, 7}, {8, -7}}), Text(origin = {2, -51}, extent = {{-36, 13}, {36, -13}}, textString = "3-axis Magnetometer")}));
+end Magnetometer;
 
 function MadgwickFusionStep
 
-// load packages
+  // load packages
   import RoverExample.Utils.quatprod;
   import RoverExample.Utils.quatinv;
   import RoverExample.Constants;
 
-// input: sensor measurements
+  // input: sensor measurements
   input Real ax, ay, az;      // [m/s^2] acceleration measured from accelerometer
   input Real gx, gy, gz;    // [rad/s] rate measured from gyroscope
-  input Real mx, my, mz;    
-// [T] magnetic field measured from magnetometer
+  input Real mx, my, mz;    // [T] magnetic field measured from magnetometer
       // input: attitude estimate
   input Real q0[4];         
 // [-] attitude quaternion
@@ -896,7 +906,9 @@ end MadgwickFusionStep;
     // gyroscope acoustic noise injection attack
       omega_yaw_false = l_g/(4*(dis_d/2)/w_d)*(X_ac*cos((w_ac-w_d)*(sample_interval*pre(timer_count))-Phi_ac)+X_d*cos(Phi_d));
     
-    end GyroAcousticAtk;
+    annotation(
+        Icon(graphics = {Ellipse(origin = {49, 10}, lineThickness = 1, extent = {{-7, 20}, {7, -20}}), Polygon(origin = {56, 8}, fillPattern = FillPattern.Solid, points = {{-2, 2}, {2, 2}, {0, -2}, {-2, 2}, {-2, 2}}), Ellipse(origin = {48, 11}, lineThickness = 1, extent = {{-20, 7}, {20, -7}}), Polygon(origin = {42, 12}, fillPattern = FillPattern.Solid, points = {{0, 2}, {-2, -2}, {2, -2}, {0, 2}, {0, 2}}), Polygon(origin = {50, 18}, fillPattern = FillPattern.Solid, points = {{-2, 2}, {-2, -2}, {2, 0}, {2, 0}, {-2, 2}}), Polygon(origin = {48, 4}, fillPattern = FillPattern.Solid, points = {{2, 2}, {-2, 0}, {2, -2}, {2, 2}, {2, 2}}), Text(origin = {51, -15}, extent = {{-27, 11}, {27, -11}}, textString = "3-axis Gyroscope"), Polygon(origin = {-58, 10}, lineThickness = 1, points = {{-2, 10}, {-22, 10}, {-22, -10}, {-2, -10}, {18, -30}, {22, -30}, {22, 30}, {18, 30}, {-2, 10}, {-2, 10}}), Ellipse(origin = {-20, 10}, lineThickness = 1, extent = {{-2, 10}, {2, -10}}), Ellipse(origin = {-10, 10}, lineThickness = 1, extent = {{-2, 20}, {2, -20}}), Ellipse(origin = {0, 10}, lineThickness = 1, extent = {{-2, 30}, {2, -30}}), Text(origin = {-38, -30}, extent = {{-38, 12}, {38, -12}}, textString = "Ultrasound Transducer")}));
+end GyroAcousticAtk;
 
   end Components;
 
