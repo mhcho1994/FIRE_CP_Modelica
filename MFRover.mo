@@ -25,7 +25,7 @@ package RoverExample
   
   annotation(
       Diagram(coordinateSystem(extent = {{-120, 80}, {240, -40}})),
-  experiment(StartTime = 0, StopTime = 35.0, Tolerance = 1e-06, Interval = 0.02));
+  experiment(StartTime = 0, StopTime = 305.0, Tolerance = 1e-06, Interval = 0.02));
   
   end ExampleScenario;
   
@@ -72,11 +72,11 @@ package RoverExample
         
       end if;
 // comment out: single turn simulation
-/*
+
       if timer_count >= repeat_interval_count then
         timer_count := 0;
       end if;
-    */  
+     
       annotation(
         Diagram,
         Icon(graphics = {Rectangle(origin = {0, 30}, extent = {{-80, 50}, {80, -50}}), Rectangle(origin = {0, 30}, extent = {{-72, 44}, {72, -44}}), Polygon(origin = {0, -60}, points = {{-64, 22}, {64, 22}, {80, -24}, {-82, -24}, {-64, 22}}), Polygon(origin = {2, -60}, points = {{-72, 28}, {68, 28}, {88, -30}, {-92, -30}, {-72, 28}}), Text(origin = {1, 30}, extent = {{-67, 38}, {67, -38}}, textString = "webserver")}),
@@ -410,7 +410,7 @@ package RoverExample
       Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);  // [-] coordinate transform from NED to body
       
       // load magnetometer model
-      Magnetometer emi;
+      Magnetometer mag;
     
     equation
       thr = v_max*pre(D);
@@ -434,7 +434,8 @@ package RoverExample
       p = 0;
       q = 0;
       r = thr/l_total*tan(delta);
-// rollover check
+
+      // rollover check
       when delta <> 0 then
         turn_radius = clip(abs(l_total/tan(delta)),0,1000);
       elsewhen delta == 0 then
@@ -446,26 +447,31 @@ package RoverExample
       elsewhen Constants.g*cos(phi_f+phi_t) > (thr^2/turn_radius)*sin(phi_f) then
         rollover_detected = 0;
       end when;
-// accelerometer specific force
+  
+      // accelerometer specific force
       C_n2b = transpose(eul2rot({phi, theta, mod(psi + Constants.PI, 2*Constants.PI) - Constants.PI}));
       for i in 1:3 loop
         specific_g[i] = C_n2b[i,3]*Constants.g;
       end for;
-// emi model inputs
-      emi.phi = phi;
-      emi.theta = theta;
-      emi.psi = psi;
-      mx = emi.b_earth[1];
-      my = emi.b_earth[2];
-      mz = emi.b_earth[3];
+  
+      // magnetometer model inputs
+      mag.phi = phi;
+      mag.theta = theta;
+      mag.psi = psi;
+      mx = mag.b_earth[1];
+      my = mag.b_earth[2];
+      mz = mag.b_earth[3];
     
     end RoverLowFidelity;
 
-    model RoverHighFidelity                                                 // high-fidelity rover model
+    model RoverHighFidelity  
+      // high-fidelity rover model: simulate rover dynamics (tire-ground interaction, motor/actuator model, chassis rigid body dynamics)
+    
       // load packages
       import RoverExample.Constants;
       import RoverExample.Utils.clip;
       import RoverExample.Utils.eul2rot;
+      
       // parameters for chassis, tire and motor dynamics
       parameter Real mass_total = 4.177;                    // [kg] rover mass
       parameter Real mass_wheel = 0.141;                    // [kg] rover tire mass
@@ -518,15 +524,20 @@ package RoverExample
       parameter Real tau_servo = 0.25;          // [sec] time constant of servo
       parameter Real latitude = 40.42362443221589;    // [deg] latitude of the vehicle position in decimal degree
       parameter Real longitude = -86.92702983414662;                          // [deg] longitude of the vehicle position in decimal degree
+       
+      // inputs
+      discrete Real D(start=0,fixed=false);           // [-] PWM duty cycle (0-1), controlled input
+      discrete Real delta_cmd(start=0,fixed=false);   // [rad] steering input command
+      
       // states & outputs for chassis, tire and motor dynamics
       Real x(start=0,fixed=false), y(start=0,fixed=false), z(start=0,fixed=false);            // [m] position in inertial coordinates
       Real vx(start=0,fixed=false), vy(start=0,fixed=false), vz(start=0,fixed=false);         // [m/s] velocity in body coordinates
       Real ax(start=0,fixed=false), ay(start=0,fixed=false), az(start=0,fixed=false);         // [m/s^2] acceleration in body coordinates
       Real phi(start=0,fixed=false), theta(start=0,fixed=false), psi(start=0,fixed=false);    // [rad] rover attitude (inertial to body)
       Real p(start=0,fixed=false), q(start=0,fixed=false), r(start=0,fixed=false);            // [rad/s] angular velocity
-      Real omega_fl(start=0,fixed=false), omega_fr(start=0,fixed=false), omega_rl(start=0,fixed=false), omega_rr(start=0,fixed=false);    // [rad/s] rotation speed of tires
-      Real kappa_fl(start=0,fixed=false), kappa_fr(start=0,fixed=false), kappa_rl(start=0,fixed=false), kappa_rr(start=0,fixed=false);    // [-] longitudinal slip ratio
-      Real alpha_fl(start=0,fixed=false), alpha_fr(start=0,fixed=false), alpha_rl(start=0,fixed=false), alpha_rr(start=0,fixed=false);    // [-] lateral slip ratio (angle)
+      Real omega_fl(start=0,fixed=false), omega_fr(start=0,fixed=false), omega_rl(start=0,fixed=false), omega_rr(start=0,fixed=false); // [rad/s] rotation speed of tires
+      Real kappa_fl(start=0,fixed=false), kappa_fr(start=0,fixed=false), kappa_rl(start=0,fixed=false), kappa_rr(start=0,fixed=false); // [-] longitudinal slip ratio
+      Real alpha_fl(start=0,fixed=false), alpha_fr(start=0,fixed=false), alpha_rl(start=0,fixed=false), alpha_rr(start=0,fixed=false); // [-] lateral slip ratio (angle)
       Real Vq(start=0,fixed=false);             // [V] motor voltage (d-q transformation)
       Real Iq(start=0,fixed=false);             // [A] motor current (d-q transformation)
       Real omega(start=0,fixed=false);          // [rad/s] motor shaft rotational speed
@@ -536,10 +547,8 @@ package RoverExample
       Real delta(start=0,fixed=false);          // [rad] steering input
       Real turn_radius(start=1000);             // [m] turning radius
       Integer rollover_detected(start=0);       // [-] rollover detection signal
-      Real mx(start=0,fixed=false), my(start=0,fixed=false), mz(start=0,fixed=false);                         // [T] magnetic field measured from magnetometer
-      // inputs
-      discrete Real D(start=0,fixed=false);           // [-] PWM duty cycle (0-1), controlled input
-      discrete Real delta_cmd(start=0,fixed=false);                     // [rad] steering input command
+      Real mx(start=0,fixed=false), my(start=0,fixed=false), mz(start=0,fixed=false); // [T] magnetic field measured from magnetometer
+      
       // internal states
       Real thr;                                       // [N*m] throttle value to each wheel shaft
       Real vs_fl, vs_fr, vs_rl, vs_rr;                // [-] friction reduction magnitude
@@ -552,13 +561,16 @@ package RoverExample
       Real Fx_fl, Fx_fr, Fx_rl, Fx_rr;                // [N] longitudinal force on wheels
       Real Fy_fl, Fy_fr, Fy_rl, Fy_rr;                // [N] lateral force on wheel
       Real vx_fl, vy_fl, vx_fr, vy_fr, vx_rl, vy_rl, vx_rr, vy_rr;                        // [m/s] tire velocity induced by vehicle motion
+      
       // accelerometer specific force compensation
       Real specific_g[3](start={0.0, 0.0, Constants.g}, each fixed=false);      // [m/s^2] gravity specific force
       Real C_n2b[3,3](start={{1, 0, 0},{0, 1, 0},{0, 0, 1}},each fixed=false);                    // [-] coordinate transform from NED to body
-      // load emi model
-      EMIHighFidelity emi(A=A, B=B, Nw=Nw);
+      
+      // load emi & magnetometer model
+      Magnetometer mag;
+      EMIVulnerability emi(A=A, B=B, Nw=Nw);
+    
     // updated: improved tire model eliminates the need for initial equations to make rover exceed speed threshold
-
 /*
     initial equation
       // note: if initialize the shaft speed and wheel speeds using vx value (directly using symbol vx), the initialization fails
@@ -571,7 +583,8 @@ package RoverExample
     */
     
     equation
-// compute motor dynamics
+  
+      // compute motor dynamics
       Vq = sqrt(3/2)*Vs*clip(pre(D),1/(sqrt(3/2)*Vs)*(R_phi*b/Kt_q+Kb_q)*(0.001/r_tire*gratio),1);
       der(Iq) = (Vq-R_phi*Iq-Kb_q*omega)/Le;
       der(lambda) = omega;
@@ -580,9 +593,11 @@ package RoverExample
       end when;
       der(omega) = (Kt_q*Iq-b*omega-4*thr)/J;
       4*omega/gratio-(omega_fl+omega_fr+omega_rl+omega_rr) = 0;
-// compute servo dynamics
+
+      // compute servo dynamics
       der(delta) = 1/tau_servo*(pre(delta_cmd)-delta);
-// compute tire force using dugoff tire model with lagged slip ratio
+
+      // compute tire force using dugoff tire model with lagged slip ratio
       der(kappa_fl) = -abs(vx+tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_fl+(r_tire*omega_fl-(vx+tw/2*r))/Lrelx;//(1+exp(scale*(abs(kappa_fl)-1.00)));
       der(kappa_fr) = -abs(vx-tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_fr+(r_tire*omega_fr-(vx-tw/2*r))/Lrelx;//(1+exp(scale*(abs(kappa_fr)-1.00)));
       der(kappa_rl) = -abs(vx+tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_rl+(r_tire*omega_rl-(vx+tw/2*r))/Lrelx;//(1+exp(scale*(abs(kappa_rl)-1.00)));
@@ -664,7 +679,8 @@ package RoverExample
       Fy_fr = c_alpha*tan(alpha_fr_bnd)/(1-kappa_fr_bnd)*fz_fr;
       Fy_rl = c_alpha*tan(alpha_rl_bnd)/(1-kappa_rl_bnd)*fz_rl;
       Fy_rr = c_alpha*tan(alpha_rr_bnd)/(1-kappa_rr_bnd)*fz_rr;
-// kinematics (planar)
+  
+      // kinematics (planar)
       der(omega_fl) = 1/I_wheel*(thr-r_tire*Fx_fl);
       der(omega_fr) = 1/I_wheel*(thr-r_tire*Fx_fr);
       der(omega_rl) = 1/I_wheel*(thr-r_tire*Fx_rl);
@@ -685,24 +701,28 @@ package RoverExample
       der(p) = 1/I_xx*(-mass_sprung*ay*hs*cos(phi)+mass_sprung*Constants.g*hs*sin(phi)-k_rllsp*phi-c_rllsp*p);
       der(q) = 0;
       der(r) = 1/I_zz*(tw/2*(Fx_fl*cos(-delta)+Fy_fl*sin(-delta))-tw/2*(Fx_fr*cos(-delta)+Fy_fr*sin(-delta))+tw/2*(Fx_rl*cos(0)+Fy_rl*sin(0))-tw/2*(Fx_rr*cos(0)+Fy_rr*sin(0))+l_front*(-Fx_fl*sin(-delta)+Fy_fl*cos(-delta))+l_front*(-Fx_fr*sin(-delta)+Fy_fr*cos(-delta))-l_rear*(-Fx_rl*sin(0)+Fy_rl*cos(0))-l_rear*(-Fx_rr*sin(0)+Fy_rr*cos(0)));
-// compute mechanical power
+  
+      // compute mechanical power
       Pmech = Kt_q*Iq*omega;
       Ploss = Iq^2*R_phi;
-// accelerometer specific force
+  
+      // accelerometer specific force
       C_n2b = transpose(eul2rot({phi, theta, mod(psi + Constants.PI, 2*Constants.PI) - Constants.PI}));
       for i in 1:3 loop
         specific_g[i] = C_n2b[i,3]*Constants.g;
       end for;
-// emi model inputs
+  
+      // emi model inputs
       emi.Iq = Iq;
       emi.lambda = lambda;
-      emi.phi = phi;
-      emi.theta = theta;
-      emi.psi = psi;
-      mx = emi.b_earth[1]+emi.b_wire[1];
-      my = emi.b_earth[2]+emi.b_wire[2];
-      mz = emi.b_earth[3]+emi.b_wire[3];
-// rollover check
+      mag.phi = phi;
+      mag.theta = theta;
+      mag.psi = psi;
+      mx = mag.b_earth[1]+emi.b_wire[1];
+      my = mag.b_earth[2]+emi.b_wire[2];
+      mz = mag.b_earth[3]+emi.b_wire[3]; 
+      
+  // rollover check
       when delta <> 0 then
         turn_radius = clip(abs(l_total/tan(delta)),0,1000);
       elsewhen delta == 0 then
@@ -746,7 +766,9 @@ equation
       b_motor = eta_motor*nu0/(4*Constants.PI)*(-(mag_motor+Nw*Iq*A)*{0,cos(lambda),sin(lambda)}/dist_motor^3+3*dot3((mag_motor+Nw*Iq*A)*{0,cos(lambda),sin(lambda)},x_motor)*x_motor/dist_motor^5);
       b_wire = nu0*Iq/(2*Constants.PI)/dist_wire^2*cross3(wire_dir,x_wire);
     
-    end EMIVulnerability;
+    annotation(
+        Icon(graphics = {Polygon(origin = {47, 8}, lineThickness = 1, points = {{-21, 20}, {-21, -12}, {-19, -16}, {-13, -20}, {-1, -20}, {13, -20}, {19, -16}, {21, -12}, {21, 20}, {11, 20}, {11, -10}, {9, -12}, {-9, -12}, {-11, -10}, {-11, 20}, {-21, 20}, {-21, 20}}), Rectangle(origin = {31, 24}, fillPattern = FillPattern.Solid, extent = {{-5, 4}, {5, -4}}), Rectangle(origin = {63, 24}, fillPattern = FillPattern.Solid, extent = {{-5, 4}, {5, -4}}), Text(origin = {46, -17}, extent = {{-36, 13}, {36, -13}}, textString = "3-axis Magnetometer"), Rectangle(origin = {-49, 1}, fillPattern = FillPattern.Solid, extent = {{-3, 61}, {3, -61}}), Ellipse(origin = {-48, 0}, lineThickness = 1, extent = {{-28, 6}, {28, -6}}), Ellipse(origin = {-48, 0}, lineThickness = 1, extent = {{-38, 12}, {38, -12}}), Ellipse(origin = {-48, 0}, lineThickness = 1, extent = {{-44, 18}, {44, -18}}), Polygon(origin = {-33, 46}, lineThickness = 1, points = {{-1, 10}, {-5, 6}, {-1, 6}, {-1, -10}, {1, -10}, {1, 6}, {5, 6}, {1, 10}, {1, 10}, {-1, 10}}), Text(origin = {-18, 45}, extent = {{-10, 7}, {10, -7}}, textString = "Current"), Polygon(origin = {-94, 2}, fillPattern = FillPattern.Solid, points = {{2, -2}, {-2, 0}, {2, -4}, {6, 0}, {2, -2}}), Polygon(origin = {-66, 4}, fillPattern = FillPattern.Solid, points = {{2, 4}, {-2, 0}, {2, -2}, {0, 0}, {2, 4}}), Polygon(origin = {-86, -4}, fillPattern = FillPattern.Solid, points = {{2, 0}, {-2, 0}, {4, -2}, {6, 2}, {2, 0}})}));
+end EMIVulnerability;
 
     model Magnetometer
       // magnetometer model
