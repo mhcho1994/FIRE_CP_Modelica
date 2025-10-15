@@ -1,7 +1,6 @@
 # FIRE_CP_Modelica
 ### Cyber-Physical System Models in Modelica
-This repository provides **cyber–physical models of robotic vehicles**, including both **aerial (drone)** and **ground (rover)** systems, developed in **Modelica**.  
-Each model integrates both *physical dynamics* (chassis, actuators, and sensors) and *cyber components* (control, sensor fusion, communication) to enable closed-loop simulation, reachability analysis, and vulnerability assessment.
+This repository provides **cyber–physical models of robotic vehicles**, including both **aerial (drone)** and **ground (rover)** systems, developed in **Modelica**. Each model integrates both *physical dynamics* (chassis, actuators, and sensors) and *cyber components* (control, sensor fusion, communication) to enable closed-loop simulation, reachability analysis, and vulnerability assessment.
 
 ---
 
