@@ -1,5 +1,5 @@
 # Model Notes & Parameter Update Guide
-## RoverLowFidelity
+## Low-Fidelity Rover Model (RoverLowFidelity)
 
 ### 1. Overview
 
@@ -45,118 +45,114 @@ Fast **low-fidelity kinematic model** of a rover for early-stage algorithm devel
 
 #### Frames
 
-- **Inertial:** flat plane with origin $(0,0,0)$, typically representing the Earth-fixed frame (NED or ENU convention depending on context).  
-- **Body:** aligned with rover’s longitudinal axis that has heading `psi` with respect to intertial coordinates.  
-- **Transform:**
-  ```math
-  C_{n2b} = \text{transpose}\big(eul2rot(\{\phi, \theta, \psi\_\text{mod}\})\big)
-  ```
-- Gravity projection: `specific_g[i] = C_n2b[i,3]*g`.  
-- Planar translation uses ENU-like `ψ`, while IMU math uses NED convention — acceptable for Lo-Fi but should be documented.
+- **Inertial:** flat ENU plane with origin $(0,0,0)$, where the x-axis points East and y-axis points North.  
+- **Body:** attached to the rover’s center of gravity, with x-axis forward and y-axis lateral, and heading `psi` measured counterclockwise from the inertial x-axis (East) to the body x-axis.  
+- **Transform:** coordinate transformation from inertial to body using Euler angles $(\phi, \theta, \psi)$. For planar motion, roll and pitch are constrained $(\phi=\theta=0)$; the rotation reduces to a yaw rotation about the vertical axis.
 
 ---
 
 ### 3. Core Kinematics
 
-Let  
-\[
-v = v_{\max} \cdot D,\quad \delta = \text{steer angle}
-\]
+The commands inputs are converted into velocity and steering angle as follows:
+``` math
+v = v_{\max} \cdot D,\quad \delta = \delta_{cmd}.
+```
 
-Then:
+Then, the planar kinematics of rover chassis is given by
 
-\[
+``` math
 \begin{aligned}
 \dot{x} &= v\cos\psi, \\
 \dot{y} &= v\sin\psi, \\
 \dot{\psi} &= \frac{v}{l_{\text{total}}}\tan\delta
 \end{aligned}
-\]
+```
 
-Lateral acceleration:
+with lateral acceleration
 
-\[
-a_y = \frac{v^2}{l_{\text{total}}}\tan(-\delta)
-\]
+``` math
+a_y = \frac{v^2}{l_{\text{total}}}\tan(-\delta).
+```
+
+Note that a positive steering angle $(\delta > 0)$ corresponds to a left turn in the rover forward direction, resulting in a positive yaw rate $(\dot{\psi} > 0)$. 
 
 ---
 
-## 4. Geometry and Derived Quantities
+### 4. Geometry and Derived Quantities
 
 | Symbol | Description |
 |---------|--------------|
 | `track_width` | Distance between left and right wheels (m) |
+| `l_total` | Distance between rear and front axles (m) |
 | `cg_height` | Height of center of gravity (m) |
-| `phi_f = atan2(cg_height, 0.5*track_width)` | Incline angle from tire contact to CG |
-| `length_to_tire = sqrt(cg_height² + (0.5*track_width)²)` | Distance CG → tire contact point |
+| `phi_f` | Incline angle from tire contact to CG |
+| `length_to_tire` | Distance CG → tire contact point |
 
 ---
 
-## 5. Rollover Detection Logic
+### 5. Rollover Detection Logic
 
 **Condition:**
-\[
-g \cos(\phi_f + \phi_t) > \frac{v^2}{R} \sin(\phi_f)
-\]
+Assuming flat terrain, the rover rolls over when the centrifugal force acting on CG exceeds the horizontal component of gravity in the body frame:
+``` math
+g \cos(\phi_f) < \frac{v^2}{R} \sin(\phi_f)
+```
 
-where  
-\[
-R = \frac{l_{\text{total}}}{\tan|\delta|}
-\]
+where the turning radius is given by
+``` math
+R = \frac{l_{\text{total}}}{\tan|\delta|}.
+```
 
-If inequality flips, rollover is detected (`rollover_detected = 1`).
+If inequality is satisfied, rollover flag is triggered (`rollover_detected = 1` in the Modelica implementation).
 
-This is a **quasi-static** check — useful for identifying unsafe maneuvers at low simulation cost.
+This is a **quasi-static** check for rollover risk — useful for identifying unsafe maneuvers or speed thresholds at low computational cost.
 
 ---
 
-## 6. IMU and Magnetometer Modeling
+### 6. Sensor Modeling
 
 - **Accelerometer:**  
-  Projects gravity into body frame:
-  \[
-  \mathbf{g}_b = C_{n2b} \begin{bmatrix}0\\0\\g\end{bmatrix}
-  \]
-  Stored in `specific_g`.
+  Projects gravity into body frame and store in  `specific_g`
+ ``` math
+  \mathbf{g}_b = C_{n}^{b} \begin{bmatrix}0\\0\\g\end{bmatrix}.
+ ``` 
 
 - **Magnetometer:**  
-  Uses current attitude (`φ, θ, ψ`) to compute Earth field vector.  
-  Output:
-  ```modelica
-  mx = mag.b_earth[1];
-  my = mag.b_earth[2];
-  mz = mag.b_earth[3];
-  ```
+  Uses current latitude attitude (`φ, θ, ψ`) to compute Earth field vector.  
+ ``` math
+  \mathbf{g}_b = C_{n}^{b} \begin{bmatrix}0\\0\\g\end{bmatrix}.
+ ``` 
 
 ---
 
-## 8. Updating Parameters for a New Rover
+### 7. Updating Parameters for a New Rover
 
-### A. Core Geometry (Required)
+#### A. Core Geometry (Required)
+These geometric parameters can be updated by measuring the physical properties of the new rover.
 
 | Parameter | Meaning | How to Measure/Estimate |
 |------------|----------|-------------------------|
 | `l_total` | Wheelbase (m) | Distance between axle centers |
 | `track_width` | Track width (m) | L/R wheel spacing (use smaller if front/rear differ) |
 | `cg_height` | CG height (m) | From spec or tilt test |
-| `phi_t` | Terrain slope (rad) | 0 for flat ground |
+| `phi_t` | Terrain slope (rad) | 0 for flat ground (use if needed) |
 | `v_max` | Max forward speed (m/s) | From test logs or spec |
 
 **Tilt test (for CG height):**
-\[
+ ``` math
 \tan\alpha^* \approx \frac{0.5 \; \text{track\_width}}{\text{cg\_height}} \Rightarrow \text{cg\_height} \approx \frac{0.5\,\text{track\_width}}{\tan\alpha^*}
-\]
+```
 
 ---
 
-### B. Steering Sign Convention
+#### B. Steering Sign Convention
 
 Check that **positive `delta` corresponds to positive yaw rate** (`ψ̇ > 0`).  
 If not, flip the sign of `delta` globally.
 
 ---
 
-### C. Units & Frame Consistency
+#### C. Units & Frame Consistency
 
 - Length → meters  
 - Angle → radians  
@@ -166,7 +162,7 @@ If not, flip the sign of `delta` globally.
 
 ---
 
-### D. Magnetometer Updates
+#### D. Magnetometer Updates
 
 If the IMU or location changes:
 - Update **mounting rotation** (body ↔ sensor).  
@@ -175,7 +171,7 @@ If the IMU or location changes:
 
 ---
 
-### E. Quick Validation Checklist
+#### E. Quick Validation Checklist
 
 | Test | Expectation |
 |------|--------------|
@@ -185,96 +181,11 @@ If the IMU or location changes:
 
 ---
 
-## 9. Implementation Options
+<br/><br/><br/>
 
-### Option 1 — Inline Parameters
-```modelica
-parameter Real l_total     = 0.278;
-parameter Real track_width = 0.234;
-parameter Real cg_height   = 0.064;
-parameter Real phi_t       = 0.0;
-parameter Real v_max       = 15.0;
-```
+## High-Fidelity Rover Model (RoverHighFidelity)
 
----
+### 1. Overview
 
-### Option 2 — Parameter Record (Recommended)
-```modelica
-package RoverParamsPkg
-  record RoverParams
-    parameter Real l_total;
-    parameter Real track_width;
-    parameter Real cg_height;
-    parameter Real phi_t;
-    parameter Real v_max;
-  end RoverParams;
-end RoverParamsPkg;
-
-model RoverLowFidelity
-  import RoverParamsPkg.*;
-  parameter RoverParams P = RoverParams(
-      l_total=0.278,
-      track_width=0.234,
-      cg_height=0.064,
-      phi_t=0.0,
-      v_max=15.0);
-
-  Real phi_f = atan2(P.cg_height, 0.5*P.track_width);
-equation
-  der(psi) = (P.v_max*pre(D))/P.l_total * tan(delta);
-end RoverLowFidelity;
-```
-
-Then define multiple configs:
-```modelica
-parameter RoverParamsPkg.RoverParams P_RoverA(
-  l_total=0.300, track_width=0.260, cg_height=0.080, phi_t=0.0, v_max=12.0);
-
-parameter RoverParamsPkg.RoverParams P_RoverB(
-  l_total=0.275, track_width=0.240, cg_height=0.070, phi_t=0.05, v_max=14.0);
-```
-
----
-
-### Option 3 — Scripted Setup
-Use `.mos` or FMU runtime scripts to set parameters externally so the model file remains immutable.
-
----
-
-## 10. Common Pitfalls & Tips
-
-- **Small `δ` values:**  
-  Replace event-based radius update with smooth expression if needed:
-  \[
-  R = \frac{l_{\text{total}}}{\tan\delta + \epsilon\,\text{sign}(\delta)},\quad \epsilon \ll 1
-  \]
-
-- **Yaw wrap:**  
-  `mod(ψ + π, 2π) − π` ensures continuous yaw wrapping.
-
-- **Throttle realism:**  
-  Add a first-order lag on `thr` for smooth transitions:
-  \[
-  \dot{v} = (v_{\text{cmd}} - v)/τ
-  \]
-
-- **Frame note:**  
-  Always document that translation uses ENU plane while IMU uses NED rotation.
-
----
-
-## 11. “New Rover” Quick Checklist
-
-- [ ] Measure `l_total` (wheelbase, m)  
-- [ ] Measure `track_width` (m)  
-- [ ] Estimate `cg_height` (m)  
-- [ ] Set `phi_t` (terrain slope, rad)  
-- [ ] Set `v_max` (m/s)  
-- [ ] Verify steering sign convention  
-- [ ] Update magnetometer alignment (if needed)  
-- [ ] Run validation tests (straight line, constant turn, rollover)
-
----
-
-**End of Document**  
-*(Prepared for CP-Glimpse Lo-Fi rover simulation framework)*
+**Goal:**  
+Fast **low-fidelity kinematic model** of a rover for early-stage algorithm development and vulnerability analysis.
