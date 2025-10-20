@@ -1,6 +1,6 @@
-# RoverLowFidelity — Model Notes & Parameter Update Guide
+## RoverLowFidelity — Model Notes & Parameter Update Guide
 
-## 1. Overview
+### 1. Overview
 
 **Goal:**  
 Fast **low-fidelity kinematic model** of a rover for early-stage algorithm development and vulnerability analysis.
