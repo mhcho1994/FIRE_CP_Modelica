@@ -1,5 +1,7 @@
-## RoverLowFidelity — Model notes & parameter update guide
-### 1. Overview
+# RoverLowFidelity — Model Notes & Parameter Update Guide
+
+## 1. Overview
+
 **Goal:**  
 Fast **low-fidelity kinematic model** of a rover for early-stage algorithm development and vulnerability analysis.
 
@@ -11,15 +13,15 @@ Fast **low-fidelity kinematic model** of a rover for early-stage algorithm devel
 
 **Assumptions:**
 - Planar motion (`z` fixed, `der(z)=0`).  
-- Direct throttle input: velocity commanded by `D` and throttle commands   
+- Direct throttle input: velocity commanded by `D`.  
 - No wheel slip or suspension.  
 - Static rollover condition (no transient load transfer).
 
 ---
 
-### 2. Model Inputs, States, and Frames
+## 2. Model Inputs, States, and Frames
 
-#### Inputs
+### Inputs
 | Variable | Type | Description |
 |-----------|------|-------------|
 | `D` | discrete | Throttle command (normalized 0–1) |
