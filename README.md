@@ -114,9 +114,9 @@ This is a **quasi-static** check for rollover risk — useful for identifying un
 
 - **Accelerometer:**  
   Projects specific forces into body frame and store in  `specific_g`
-  ``` math
-    \mathbf{f}_b = C_{n}^{b} \begin{bmatrix}0\\0\\g\end{bmatrix}.
-  ``` 
+``` math
+  \mathbf{f}_b = C_{n}^{b} \begin{bmatrix}0\\0\\g\end{bmatrix}.
+``` 
 
 - **Magnetometer:**  
   Computes the local Earth magnetic field using the reference latitude `lat0` and transforms it into the body (sensor) frame using the vehicle attitude $(\phi, \theta, \psi)$
