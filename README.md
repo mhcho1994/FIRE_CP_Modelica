@@ -1,4 +1,5 @@
-## RoverLowFidelity — Model Notes & Parameter Update Guide
+# Model Notes & Parameter Update Guide
+## RoverLowFidelity
 
 ### 1. Overview
 
@@ -8,56 +9,52 @@ Fast **low-fidelity kinematic model** of a rover for early-stage algorithm devel
 **Key features:**
 - Models planar kinematics only — **no ground friction or actuator dynamics**.  
 - Uses a simplified **bicycle-like steering geometry**.  
-- Includes **rollover detection** and basic **IMU/magnetometer stubs**.  
+- Includes **rollover detection (kinematic-based)** and basic **sensor module (sampling)**.  
 - Designed for **real-time or large-scale fuzzing simulations**.
 
 **Assumptions:**
-- Planar motion (`z` fixed, `der(z)=0`).  
-- Direct throttle input: velocity commanded by `D`.  
+- Planar motion (`z=0` fixed, `der(z)=0`).  
+- Direct throttle input: forward velocity commanded by `D`.  
 - No wheel slip or suspension.  
 - Static rollover condition (no transient load transfer).
 
 ---
 
-## 2. Model Inputs, States, and Frames
+### 2. Model Inputs, States, and Frames
 
-### Inputs
+#### Inputs
 | Variable | Type | Description |
 |-----------|------|-------------|
 | `D` | discrete | Throttle command (normalized 0–1) |
 | `delta_cmd` | discrete | Steering angle command [rad] |
 
-Inputs use `pre(...)` to ensure event-synchronous updates and avoid algebraic loops.
-
 ---
 
-### States
+#### States
 | Category | Variables | Description |
 |-----------|------------|-------------|
-| **Position** | `x, y, z` | Position in inertial coordinates (m) |
-| **Velocity** | `vx, vy, vz` | Body-frame linear velocity (m/s) |
-| **Acceleration** | `ax, ay, az` | Body-frame acceleration (m/s²) |
-| **Attitude** | `phi, theta, psi` | Roll, pitch, yaw (rad) |
-| **Angular rates** | `p, q, r` | Body-frame angular velocity (rad/s) |
+| **Position** | `x`, `y`, `z` | Position in inertial coordinates (m) |
+| **Velocity** | `vx`, `vy`, `vz` | Body-frame linear velocity (m/s) |
+| **Acceleration** | `ax`, `ay`, `az` | Body-frame acceleration (m/s²) |
+| **Attitude** | `phi`, `theta`, `psi` | Roll, pitch, yaw (rad) |
+| **Angular rates** | `p`, `q`, `r` | Body-frame angular velocity (rad/s) |
+| **IMU/Mag** | `specific_g[3]`, `mx`, `my`, `mz` | Gravity projection & magnetometer readings |
 | **Auxiliary** | `turn_radius`, `rollover_detected` | Turning curvature and rollover flag |
-| **IMU/Mag** | `specific_g[3]`, `mx, my, mz` | Gravity projection & magnetometer readings |
 
 ---
 
-### Frames
+#### Frames
 
-- **Inertial:** flat plane with heading `ψ`.  
-- **Body:** aligned with rover’s longitudinal axis.  
+- **Inertial:** flat plane with origin $(0,0,0)$, typically representing the Earth-fixed frame (NED or ENU convention depending on context).  
+- **Body:** aligned with rover’s longitudinal axis that has heading `psi` with respect to intertial coordinates.  
 - **Transform:**  
-  \[
-  C_{n2b} = \text{transpose}\big(eul2rot(\{\phi, \theta, \psi\_\text{mod}\})\big)
-  \]
+  $$ C_{n2b} = \text{transpose}\big(eul2rot(\{\phi, \theta, \psi\_\text{mod}\})\big) $$
 - Gravity projection: `specific_g[i] = C_n2b[i,3]*g`.  
 - Planar translation uses ENU-like `ψ`, while IMU math uses NED convention — acceptable for Lo-Fi but should be documented.
 
 ---
 
-## 3. Core Kinematics
+### 3. Core Kinematics
 
 Let  
 \[
@@ -128,17 +125,6 @@ This is a **quasi-static** check — useful for identifying unsafe maneuvers at 
   my = mag.b_earth[2];
   mz = mag.b_earth[3];
   ```
-
----
-
-## 7. Why Use `pre(...)`?
-
-Modelica’s `pre()` ensures **inputs are discrete and held constant** until the next event.  
-This avoids algebraic loops and guarantees well-defined event sequencing:
-```modelica
-thr = v_max * pre(D);
-delta = pre(delta_cmd);
-```
 
 ---
 
