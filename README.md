@@ -47,8 +47,10 @@ Fast **low-fidelity kinematic model** of a rover for early-stage algorithm devel
 
 - **Inertial:** flat plane with origin $(0,0,0)$, typically representing the Earth-fixed frame (NED or ENU convention depending on context).  
 - **Body:** aligned with rover’s longitudinal axis that has heading `psi` with respect to intertial coordinates.  
-- **Transform:**\
-  $$ C_{n2b} = \text{transpose}\big(eul2rot(\{\phi, \theta, \psi\_\text{mod}\})\big) $$
+- **Transform:**
+  ```math
+  C_{n2b} = \text{transpose}\big(eul2rot(\{\phi, \theta, \psi\_\text{mod}\})\big)
+  ```
 - Gravity projection: `specific_g[i] = C_n2b[i,3]*g`.  
 - Planar translation uses ENU-like `ψ`, while IMU math uses NED convention — acceptable for Lo-Fi but should be documented.
 
