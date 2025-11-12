@@ -25,7 +25,7 @@ package RoverExample
   
   annotation(
       Diagram(coordinateSystem(extent = {{-120, 80}, {240, -40}})),
-  experiment(StartTime = 0, StopTime = 300.0, Tolerance = 1e-06, Interval = 0.02));
+  experiment(StartTime = 0, StopTime = 30.0, Tolerance = 1e-06, Interval = 0.02));
   
   end ExampleScenario;
   
@@ -58,30 +58,32 @@ package RoverExample
 // algorithm models turn commands
 // turn command example: 0 (no turn) for (turn_interval) secs -> 1 (right turn) for (turn_interval) secs
 // -> -1 (left turn) for (turn_interval) secs) -> 0 (no turn) for (turn_interval) secs
-      if (timer_count <= 1*turn_interval_count) and (timer_count >= 0*turn_interval_count) then
-        turn := 0;
+      //if (timer_count <= 1*turn_interval_count) and (timer_count >= 0*turn_interval_count) then
+      //  turn := 0;
         
-      elseif (timer_count <= 2*turn_interval_count) and (timer_count > 1*turn_interval_count) then
-        turn := 1;
+      //elseif (timer_count <= 2*turn_interval_count) and (timer_count > 1*turn_interval_count) then
+      //  turn := 1;
         
-      elseif (timer_count <= 3*turn_interval_count) and (timer_count > 2*turn_interval_count) then
-        turn := 1;
+      //elseif (timer_count <= 3*turn_interval_count) and (timer_count > 2*turn_interval_count) then
+      //  turn := 1;
         
-      else
-        turn := 0;
+      //else
+      //  turn := 0;
         
-      end if;
+      //end if;
 // comment out: single turn simulation
 
-      if timer_count >= repeat_interval_count then
-        timer_count := 0;
-      end if;
-    
-      //if (timer_count <= 1*turn_interval_count) then
-      //  turn := 0;
-      //else
-      //  turn := 1;
+      //if timer_count >= repeat_interval_count then
+      //  timer_count := 0;
       //end if;
+      
+      //turn := 0;
+    
+      if (timer_count <= 1*turn_interval_count) then
+        turn := 0;
+      else
+        turn := 1;
+      end if;
      
       annotation(
         Diagram,
@@ -97,7 +99,7 @@ package RoverExample
       import RoverExample.Utils.quat2eul;
       // parameters
       parameter Real delta_max = 25.28*Constants.PI/180;        // [rad] max steering angle
-      parameter Real delta_turn = 25.28*Constants.PI/180;       // [rad] turn steering angle
+      parameter Real delta_turn = 3.28*Constants.PI/180;       // [rad] turn steering angle
       parameter Real v_fwd = 1.0;                               // [m/s] nominal forward velocity
       parameter Real v_max = 15.0;                              // [m/s] max forward velocity
       parameter Real sample_interval = 0.1;                     // [sec] sampling time
@@ -162,7 +164,7 @@ package RoverExample
       
       when sample(0, sample_interval) then
 // translate output to pwm
-        pwm_throttle := 1000 + integer(1000*v/v_max);
+        pwm_throttle := 2000; //1000 + integer(1000*v/v_max);
         pwm_steering := 1500 + integer(500*delta/delta_max);
 // updated: improved complementary filter
 //psi_pred := psi_filtered+r_gyro*sample_interval;
@@ -281,6 +283,9 @@ package RoverExample
       Connectors.RealOutput p_meas, q_meas, r_meas;
       Connectors.RealOutput mx_meas, my_meas, mz_meas;
       Connectors.RealOutput rollover_detected;
+      Connectors.RealOutput rollover_metric_roll;
+      Connectors.RealOutput rollover_metric_z;
+      Connectors.RealOutput shaft_failure;
       
     algorithm
 // algorithm models pwm sampling of ESC/servo
@@ -345,6 +350,9 @@ package RoverExample
         my_meas = rover_3d.my;
         mz_meas = rover_3d.mz;
         rollover_detected = rover_3d.rollover_detected;
+        shaft_failure = 0;
+        rollover_metric_roll = 0;
+        rollover_metric_z = 0;
         
       elseif fidelity == 2 then
         x_meas = rover_8d.x_t;
@@ -366,6 +374,9 @@ package RoverExample
         my_meas = rover_8d.my;
         mz_meas = rover_8d.mz;
         rollover_detected = rover_8d.rollover_detected;
+        shaft_failure = rover_8d.shaft_failure;
+        rollover_metric_roll = rover_8d.rollover_metric_roll; // 28deg
+        rollover_metric_z = rover_8d.rollover_metric_z; // -0.056 m
         
       end if;
         
@@ -567,6 +578,17 @@ package RoverExample
        
       parameter Real torqueGain = 0.08;
        
+      // parameters for chassis, tire and motor dynamics
+      parameter Real tau_yield = 0.577 * 140 * 10^6;		// [pa] yield shear stress
+      parameter Real r_shaft = 3e-3;			// [m] radius of shaft
+       
+      // states & outputs for chassis, tire and motor dynamics
+      Integer shaft_failure(start=0);       // [-] shaft failure signal
+      Real T_motor(start=0,fixed=false);            // [N*m] motor torque out from motor
+      Real T_gear(start=0,fixed=false);            // [N*m] motor torque out from gearbox
+      Real tau_shaft(start=0,fixed=false);	// [N/m^2] shear stress applied to shaft
+    
+       
       // inputs
       discrete Real D(start=0,fixed=false);           // [-] PWM duty cycle (0-1), controlled input
       discrete Real delta_cmd(start=0,fixed=false);   // [rad] steering input command
@@ -646,6 +668,8 @@ package RoverExample
       Real turn_radius(start=1000);             // [m] turning radius
       Integer rollover_detected(start=0);       // [-] rollover detection signal
       Real mx(start=0,fixed=false), my(start=0,fixed=false), mz(start=0,fixed=false); // [T] magnetic field measured from magnetometer
+      Real rollover_metric_roll;
+      Real rollover_metric_z;
       
       // accelerometer specific force compensation
       Real specific_g[3](start={0.0, 0.0, Constants.g}, each fixed=false);      // [m/s^2] gravity specific force
@@ -659,12 +683,22 @@ package RoverExample
   
       // compute motor dynamics
       Vq = sqrt(3/2)*Vs*clip(pre(D),1/(sqrt(3/2)*Vs)*(R_phi*b/Kt_q+Kb_q)*(0.001/r_wheel*gratio),1);
+      
+    
+      
+      
       der(Iq) = (Vq-R_phi*Iq-Kb_q*omega_m)/Le;
       der(lambda_m) = omega_m;
       when lambda_m > 2*Constants.PI then
         reinit(lambda_m,lambda_m-2*Constants.PI);
       end when;
-      der(omega_m) = (Kt_q*Iq-b*omega_m-torqueGain*((omega_m/gratio - omega_fl) + (omega_m/gratio - omega_fr) + (omega_m/gratio - omega_rl) + (omega_m/gratio - omega_rr)))/Jm;
+      
+      // compute shear stress
+      T_motor = Kt_q * Iq;
+      T_gear = T_motor *eta_mech * gratio;
+      tau_shaft = T_gear * 2 / Constants.PI / (r_shaft^3);
+      
+      der(omega_m) = (T_motor-b*omega_m-torqueGain*((omega_m/gratio - omega_fl) + (omega_m/gratio - omega_fr) + (omega_m/gratio - omega_rl) + (omega_m/gratio - omega_rr)))/Jm;
 
       // compute servo dynamics
       der(delta_f)   = deltadot_f;
@@ -898,9 +932,16 @@ package RoverExample
         turn_radius = 1000;
       end when;
       
-      when Fz_LF <= 1.5 or Fz_RF <= 1.5 or Fz_LR <= 1.5 or Fz_RR <= 1.5 then
+      when Fz_LF <= 0.5 or Fz_RF <= 0.5 or Fz_LR <= 0.5 or Fz_RR <= 0.5 then
         rollover_detected = 1;
       end when;
+      
+      when tau_shaft > tau_yield then
+        shaft_failure = 1;
+      end when;
+      
+      rollover_metric_roll = phi_s;
+      rollover_metric_z = -z_s;
       
     end RoverHighFidelity;
 
