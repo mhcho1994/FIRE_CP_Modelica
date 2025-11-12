@@ -25,7 +25,7 @@ package RoverExample
   
   annotation(
       Diagram(coordinateSystem(extent = {{-120, 80}, {240, -40}})),
-  experiment(StartTime = 0, StopTime = 305.0, Tolerance = 1e-06, Interval = 0.02));
+  experiment(StartTime = 0, StopTime = 300.0, Tolerance = 1e-06, Interval = 0.02));
   
   end ExampleScenario;
   
@@ -35,7 +35,7 @@ package RoverExample
     model Webserver
     // interaction of the user-making discrete turn commands on the website
       parameter Real sample_interval = 0.1;      // [sec] update rate for command
-      parameter Real turn_interval = 7.0;       // [sec] interval between straight, left, right sequence
+      parameter Real turn_interval = 15;//7.0;       // [sec] interval between straight, left, right sequence
       parameter Real repeat_interval = 21.0;          // [sec] repeat sequence
       parameter Integer turn_interval_count = integer(turn_interval/sample_interval);       // [-] count for turn interval
       parameter Integer repeat_interval_count = integer(repeat_interval/sample_interval);               // [-] count for sample interval
@@ -76,6 +76,12 @@ package RoverExample
       if timer_count >= repeat_interval_count then
         timer_count := 0;
       end if;
+    
+      //if (timer_count <= 1*turn_interval_count) then
+      //  turn := 0;
+      //else
+      //  turn := 1;
+      //end if;
      
       annotation(
         Diagram,
@@ -341,21 +347,21 @@ package RoverExample
         rollover_detected = rover_3d.rollover_detected;
         
       elseif fidelity == 2 then
-        x_meas = rover_8d.x;
-        y_meas = rover_8d.y;
-        z_meas = rover_8d.z;
-        vx_meas = rover_8d.vx;
-        vy_meas = rover_8d.vy;
-        vz_meas = rover_8d.vz;
-        ax_meas = rover_8d.ax-rover_8d.specific_g[1];
-        ay_meas = rover_8d.ay-rover_8d.specific_g[2];
-        az_meas = rover_8d.az-rover_8d.specific_g[3];
-        phi_meas = rover_8d.phi;
-        theta_meas = rover_8d.theta;
-        psi_meas = mod(rover_8d.psi + Constants.PI, 2*Constants.PI) - Constants.PI;
-        p_meas = rover_8d.p;
-        q_meas = rover_8d.q;
-        r_meas = rover_8d.r+gyroatk.omega_yaw_false;
+        x_meas = rover_8d.x_t;
+        y_meas = rover_8d.y_u;
+        z_meas = rover_8d.z_s;
+        vx_meas = rover_8d.u_t;
+        vy_meas = rover_8d.v_u;
+        vz_meas = rover_8d.w_s;
+        ax_meas = rover_8d.a_x-rover_8d.specific_g[1];
+        ay_meas = rover_8d.a_y_s-rover_8d.specific_g[2];
+        az_meas = 0-rover_8d.specific_g[3];
+        phi_meas = rover_8d.phi_s;
+        theta_meas = rover_8d.theta_s;
+        psi_meas = mod(rover_8d.psi_t + Constants.PI, 2*Constants.PI) - Constants.PI;
+        p_meas = rover_8d.p_s;
+        q_meas = rover_8d.q_s;
+        r_meas = rover_8d.r_t+gyroatk.omega_yaw_false;
         mx_meas = rover_8d.mx;
         my_meas = rover_8d.my;
         mz_meas = rover_8d.mz;
@@ -426,7 +432,7 @@ package RoverExample
       der(vy) = 0;
       der(vz) = 0;
       ax = 0;
-      ay = thr*thr/l_total*tan(-delta);
+      ay = thr*thr/l_total*tan(delta);
       az = 0;
       der(phi) = 0;
       der(theta) = 0;
@@ -475,92 +481,171 @@ package RoverExample
       // parameters for chassis, tire and motor dynamics
       parameter Real mass_total = 4.177;                    // [kg] rover mass
       parameter Real mass_wheel = 0.141;                    // [kg] rover tire mass
-      parameter Real mass_unsprung_front = 8.0*mass_wheel;  // [kg] front unsprung mass
-      parameter Real mass_unsprung_rear = 8.0*mass_wheel;   // [kg] rear unsprung mass
+      parameter Real mass_unsprung_front = 6.0*mass_wheel;  // [kg] front unsprung mass
+      parameter Real mass_unsprung_rear = 6.0*mass_wheel;   // [kg] rear unsprung mass
       parameter Real mass_sprung = mass_total-mass_unsprung_front-mass_unsprung_rear;
       parameter Real l_total = 0.275;                       // [m] distance from rear axle to front axle
       parameter Real l_front = 0.136;                       // [m] distance from cg to front axle
       parameter Real l_rear = 0.139;                        // [m] distance from cg to rear axle
       parameter Real tw = 0.234;                            // [m] rover trackwidth
-      parameter Real r_tire = 0.056;                        // [m] rover tire radius
-      parameter Real w_tire = 0.06;                         // [m] tire width
-      parameter Real huf = 0.01;                            // [m] height of front unsprung mass cg from roll axis
-      parameter Real hur = 0.01;                            // [m] height of rear unsprung mass cg from roll axis
-      parameter Real hs = 0.06;                             // [m] height of rear sprung mass cg from roll axis
-      parameter Real I_wheel = 1/2*mass_wheel*r_tire^2*3;       // [kg*m^2] rolling moment of inertia of wheels
-      parameter Real I_zz = 1/12*mass_total*(l_total^2+tw^2);   // [kg*m^2] yaw moment of inertia
-      parameter Real I_xx = 1/2*mass_total*(tw/2)^2;            // [kg*m^2] roll moment of inertia
-      parameter Real c_aero = 0.0;              // [1/m] aerodynamic resistance coefficient
-      parameter Real mu0 = 0.8;                 // [-] maximum friction scaling coefficient, [0.4 1.2]
+      parameter Real r_wheel = 0.056;                       // [m] rover tire radius
+      parameter Real w_wheel = 0.06;                        // [m] tire width
+      parameter Real h_raf = 0.076;                         // [m] height of front unsprung mass cg from roll axis
+      parameter Real h_rar = 0.076;                         // [m] height of rear unsprung mass cg from roll axis
+      parameter Real h_s = 0.101;                           // [m] height of rear sprung mass cg from roll axis
+      parameter Real Iyy_wheel = 1/2*mass_wheel*r_wheel^2*3;               // [kg*m^2] y-axis moment of inertia of wheels
+      parameter Real Izz_wheel = 1/12*mass_wheel*(3*r_wheel^2+w_wheel^2);  // [kg*m^2] z-axis moment of inertia of wheels
+      parameter Real Izz_t = 1/12*mass_total*(l_total^2+tw^2);              // [kg*m^2] z-axis moment of inertia of total chassis
+      parameter Real Ixx_uf = 1/12*mass_unsprung_front*(tw^2+(2*(h_raf-r_wheel))^2);  // [kg*m^2] x-axis moment of inertia of front unsprung mass
+      parameter Real Ixx_ur = 1/12*mass_unsprung_rear*(tw^2+(2*(h_rar-r_wheel))^2);   // [kg*m^2] x-axis moment of inertia of rear unsprung mass
+      parameter Real Ixx_s = 1/12*mass_sprung*(tw^2+(2*(h_s-h_raf))^2);               // [kg*m^2] x-axis moment of inertia of sprung mass
+      parameter Real Ixz_s = 0;                                                       // [kg*m^2] xz product inertia of sprung mass
+      parameter Real Iyy_s = 1/12*mass_sprung*(tw^2+l_total^2);                       // [kg*m^2] y-axis moment of inertia of sprung mass
+    
+      parameter Real mu0 = 0.9;                 // [-] maximum friction scaling coefficient, [0.4 1.2]
       parameter Real As = 0.0;                  // [-] friction reduction factor
-      parameter Real c_kappa = 4.0;             // [N] longitudinal stiffness
-      parameter Real c_alpha = 20.0;            // [N/rad] lateral stiffness
+      parameter Real c_s = 400.0;               // [N] longitudinal stiffness
+      parameter Real c_alpha = 2400.0;          // [N/rad] lateral stiffness
       parameter Real Lrelx = 0.185;             // [m] longitudinal relaxation length
       parameter Real Lrely = 0.185;             // [m] lateral realaxation length
-      parameter Real k_rllsp = 2.00;              // [N/rad] rolling stiffness
-      parameter Real c_rllsp = 1.00;              // [N/(rad/s)] rolling damping
-      parameter Real normal_lim = 1.55;           // [N] normal force limit for rolling over
-      parameter Real kappa_max = 0.999;           // [-] upper bound of slip ratio
-      parameter Real kappa_min = -0.999;          // [-] lower bound of slip ratio
+    
+      parameter Real k_lt = 0;                              // [-] lateral compliance rate of tire and suspension, cf. 2.6/k_zt
+      parameter Real k_scf = (20.0^2)*(2*Izz_wheel);       // [rad/N*m] steering compliance for front steering gear, wn = 20 rad/s
+      parameter Real k_scv = (2*0.707*20.0)*(2*Izz_wheel); // [rad*s/N*m] damping for front steering gear, zeta = 0.707
+      parameter Real k_zt = 510*(30/25.4+2*(56/25.4))*(42/35)*0.3048/4.44822; // [N/m] vertical spring rate of tire, cf. REF 5 page B-14, tune pressure from 35psi to 42psi
+      parameter Real k_zd = 0.1*k_zt;                       // [N*s/m] vertical damping of tire, added for stability
+    
+      parameter Real k_sf = (0.5*mass_sprung*l_rear/l_total)*(24.36)^2;               // [N/m] front suspension spring rate (adapted from experimental data)
+      parameter Real k_sdf = 2*(0.12)*sqrt(k_sf*(0.5*mass_sprung*l_rear/l_total));    // [N*s/m] front suspension damping rate (adapted from experimental data)
+      parameter Real k_orsf = 25.0;                                                   // [N*m/rad] overall roll stiffness of front axle
+      parameter Real k_tsf = k_orsf*(k_zt*tw^2/2)/((k_zt*tw^2/2)-k_orsf)+k_sf*tw^2/2; // [N*m/rad] front auxiliary roll stiffness
+      parameter Real l_saf = 2/3*tw;                                                  // [m] length of the front axle arm (wheel to suspension pivot)
+      parameter Real tw_f = tw;                                                       // [m] front trackwidth
+      parameter Real k_slf = 0.115;                                                   // [-] lateral slope of equivalent single suspension arm, cf. REF 5 page C-2
+      parameter Real k_sadf = 0.0;                                                    // [-] suspension squat/lift ratio (in deceleration)
+      parameter Real k_sad2f = 0.0;                                                   // [-] suspension squat/lift ratio (in acceleration)
+      parameter Real k_sr = (0.5*mass_sprung*l_front/l_total)*(24.36)^2;              // [N/m] front suspension spring rate (adapted from experimental data)
+      parameter Real k_sdr = 2*(0.12)*sqrt(k_sr*(0.5*mass_sprung*l_front/l_total));   // [N*s/m] front suspension damping rate (adapted from experimental data)
+      parameter Real k_orsr = k_orsf;                                                 // [N*m/rad] overall roll stiffness of front axle
+      parameter Real k_tsr = k_orsr*(k_zt*tw^2/2)/((k_zt*tw^2/2)-k_orsr)+k_sr*tw^2/2; // [N*m/rad] front auxiliary roll stiffness
+      parameter Real l_sar = 2/3*tw;                                                  // [m] length of the front axle arm (wheel to suspension pivot)
+      parameter Real tw_r = tw;                                                       // [m] front trackwidth
+      parameter Real k_slr = 0.115;                                                   // [-] lateral slope of equivalent single suspension arm, cf. REF 5 page C-2
+      parameter Real k_sadr = 0.0;                                                    // [-] suspension squat/lift ratio (in deceleration)
+      parameter Real k_sad2r = 0.0;                                                   // [-] suspension squat/lift ratio (in acceleration)
+      parameter Real h_bs = 0.03;                                                     // [m] suspension travel to bumpt stop (measured)
+      parameter Real k_bs = 2.0*k_sf;                                                 // [N/m] bump stop stiffness, cf. REF 5 page B-13
+      parameter Real k_ras = 1.0*10^3;                                                // [N/m] lateral spring rate at compliant pin joint between sprung and unsprung masses, cf. REF 5 page B-13
+      parameter Real k_rad = 1.0*2*sqrt(2*mass_unsprung_front*k_ras);                 // [N*s/m] lateral damping rate at compliant pin joint between sprung and unsprung masses, cf. REF 5 page B-14
+      parameter Real s_max = 0.999;               // [-] upper bound of slip ratio
+      parameter Real s_min = -0.999;              // [-] lower bound of slip ratio
       parameter Real alpha_max = Constants.PI/2;  // [rad] upper bound of slip angle
       parameter Real alpha_min = -Constants.PI/2; // [rad] lower bound of slip angle
-      parameter Real z_min = 0.0;                 // [-] lower bound of non-dimensional tire force parameter
-      parameter Real z_max = 10^4;                // [-] upper bound of non-dimensional tire force parameter
-      parameter Real Vs = 11.1;                 // [V] supply voltage
-      parameter Real Np = 4;                    // [-] number of pole pairs in the motor
-      parameter Real Nw = 20;                   // [-] number of windings in each phase
-      parameter Real A = 0.005*0.02;            // [m^2] cross-sectional area of windings stator
-      parameter Real B = 1.2;                   // [T] magnetic flux density of stator
-      parameter Real eta_mech = 0.99;           // [-] mechanical conversion efficiency
+      parameter Real kappa_min = 0.0;             // [-] lower bound of non-dimensional tire force parameter
+      parameter Real kappa_max = 10^4;            // [-] upper bound of non-dimensional tire force parameter
+      
+      parameter Real Vs = 11.1;                   // [V] supply voltage
+      parameter Real Np = 4;                      // [-] number of pole pairs in the motor
+      parameter Real Nw = 20;                     // [-] number of windings in each phase
+      parameter Real A = 0.005*0.02;              // [m^2] cross-sectional area of windings stator
+      parameter Real B = 1.2;                     // [T] magnetic flux density of stator
+      parameter Real eta_mech = 0.99;             // [-] mechanical conversion efficiency
       parameter Real Kt_phi = eta_mech*Np*Nw*A*B; // [N*m/A] motor torque constant (per-phase)
-      parameter Real Kb_phi = Np*Nw*A*B;        // [V*s/rad] motor back emf constant (per-phase)
-      parameter Real Kt_q = sqrt(3/2)*Kt_phi;   // [N*m/A] motor torque constant (total)
-      parameter Real Kb_q = sqrt(3/2)*Kb_phi;   // [V*s/rad] motor back emf constant (total)
-      parameter Real R_phi = 0.1;               // [Ohm] resistance of BLDC motor (per-phase)
-      parameter Real J = 1e-4;                  // [kg*m^2] rotor inertia
-      parameter Real Le = 1e-2;                 // [H] effective inductance
-      parameter Real b = 6.0e-04;               // [N*m*s] viscous friction coefficient
-      parameter Real gratio = 2.5;              // [-] gear ratio between motor shaft and wheel shafts
-      parameter Real tau_servo = 0.25;          // [sec] time constant of servo
+      parameter Real Kb_phi = Np*Nw*A*B;          // [V*s/rad] motor back emf constant (per-phase)
+      parameter Real Kt_q = sqrt(3/2)*Kt_phi;     // [N*m/A] motor torque constant (total)
+      parameter Real Kb_q = sqrt(3/2)*Kb_phi;     // [V*s/rad] motor back emf constant (total)
+      parameter Real R_phi = 0.1;                 // [Ohm] resistance of BLDC motor (per-phase)
+      parameter Real Jm = 1e-4;                   // [kg*m^2] rotor inertia
+      parameter Real Le = 1e-2;                   // [H] effective inductance
+      parameter Real b = 6.0e-04;                 // [N*m*s] viscous friction coefficient
+      parameter Real gratio = 2.5;                // [-] gear ratio between motor shaft and wheel shafts
+    
+      parameter Real delta_max = (28.28-3.00)/180*Constants.PI; // [rad] maximum angle of steering servo
+      parameter Real deltadot_max = 100/180*Constants.PI;           // [rad/s] maximum
       parameter Real latitude = 40.42362443221589;    // [deg] latitude of the vehicle position in decimal degree
       parameter Real longitude = -86.92702983414662;                          // [deg] longitude of the vehicle position in decimal degree
+       
+      parameter Real torqueGain = 0.08;
        
       // inputs
       discrete Real D(start=0,fixed=false);           // [-] PWM duty cycle (0-1), controlled input
       discrete Real delta_cmd(start=0,fixed=false);   // [rad] steering input command
       
+      //parameter Real D = 0.15;
+      //parameter Real delta_cmd = 0;
+      
       // states & outputs for chassis, tire and motor dynamics
-      Real x(start=0,fixed=false), y(start=0,fixed=false), z(start=0,fixed=false);            // [m] position in inertial coordinates
-      Real vx(start=0,fixed=false), vy(start=0,fixed=false), vz(start=0,fixed=false);         // [m/s] velocity in body coordinates
-      Real ax(start=0,fixed=false), ay(start=0,fixed=false), az(start=0,fixed=false);         // [m/s^2] acceleration in body coordinates
-      Real phi(start=0,fixed=false), theta(start=0,fixed=false), psi(start=0,fixed=false);    // [rad] rover attitude (inertial to body)
-      Real p(start=0,fixed=false), q(start=0,fixed=false), r(start=0,fixed=false);            // [rad/s] angular velocity
+      // global pose & planar chassis velocities
+      Real x_t(start=0,fixed=false), u_t(start=0,fixed=false);    // [m, m/s] x position in inertial coordinates, forward velociy in road coordinates
+      Real psi_t(start=0,fixed=false), r_t(start=0,fixed=false);  // [rad] heading and yaw rate in inertial coordinates
+      Real y_u(start=0,fixed=false), v_u(start=0,fixed=false);    // [m, m/s] y position in inertial coordinates (unsprung masses), side velocity in road coordinates
+    
+      // lateral relative deflections/velocities
+      Real delta_y_suf(start=0,fixed=false), delta_v_suf(start=0,fixed=false);
+      Real delta_y_sur(start=0,fixed=false), delta_v_sur(start=0,fixed=false);
+    
+      // vertical positions/velocities
+      Real z_uf(start=0,fixed=false), w_uf(start=0,fixed=false);
+      Real z_ur(start=0,fixed=false), w_ur(start=0,fixed=false);
+      Real z_s(start=0,fixed=false), w_s(start=0,fixed=false);
+    
+      // attitudes/rates
+      Real phi_uf(start=0,fixed=false), p_uf(start=0,fixed=false);
+      Real phi_ur(start=0,fixed=false), p_ur(start=0,fixed=false);
+      Real phi_s(start=0,fixed=false), p_s(start=0,fixed=false);
+      Real theta_s(start=0,fixed=false), q_s(start=0,fixed=false);
+    
+      // wheel spins
       Real omega_fl(start=0,fixed=false), omega_fr(start=0,fixed=false), omega_rl(start=0,fixed=false), omega_rr(start=0,fixed=false); // [rad/s] rotation speed of tires
-      Real kappa_fl(start=0,fixed=false), kappa_fr(start=0,fixed=false), kappa_rl(start=0,fixed=false), kappa_rr(start=0,fixed=false); // [-] longitudinal slip ratio
-      Real alpha_fl(start=0,fixed=false), alpha_fr(start=0,fixed=false), alpha_rl(start=0,fixed=false), alpha_rr(start=0,fixed=false); // [-] lateral slip ratio (angle)
+      
+      // Motor dq current & shaft speed
       Real Vq(start=0,fixed=false);             // [V] motor voltage (d-q transformation)
-      Real Iq(start=0,fixed=false);             // [A] motor current (d-q transformation)
-      Real omega(start=0,fixed=false);          // [rad/s] motor shaft rotational speed
-      Real lambda(start=0,fixed=false);         // [rad] motor shaft rotation angle
+      Real Iq(start=0), omega_m(start=0);
+      Real lambda_m(start=0,fixed=false);         // [rad] motor shaft rotation angle
+    
+    
+      // Longitudinal slip (4) & lateral slip (4)
+      Real s_fl(start=0), s_fr(start=0), s_rl(start=0), s_rr(start=0);                  // [-] longitudinal slip ratio
+      Real alpha_fl(start=0), alpha_fr(start=0), alpha_rl(start=0), alpha_rr(start=0);
+    
+      // Steering state (angle & rate) — compliant steering
+      Real delta_f(start=0), deltadot_f(start=0);
+    
+      // ===== Derived locals =====
+      // Ackermann steer per front wheel
+      Real delta_fl, delta_fr, delta_rl, delta_rr;
+    
+      // Tire normal forces
+      Real Fz_LF, Fz_RF, Fz_LR, Fz_RR;
+    
+      // Wheel-plane velocities
+      Real u_fl, v_fl, u_fr, v_fr, u_rl, v_rl, u_rr, v_rr;
+    
+      // Slip helper
+      Real mu_fl, mu_fr, mu_rl, mu_rr, kappa_fl, kappa_fr, kappa_rl, kappa_rr, fkappa_fl, fkappa_fr, fkappa_rl, fkappa_rr;
+      Real vs_fl, vs_fr, vs_rl, vs_rr;
+    
+      // Tire forces in tire frame
+      Real Fx_LF, Fx_RF, Fx_LR, Fx_RR;
+      Real Fy_LF, Fy_RF, Fy_LR, Fy_RR;
+    
+      // Suspension forces
+      Real z_SLF, z_SRF, z_SLR, z_SRR;
+      Real zdot_SLF, zdot_SRF, zdot_SLR, zdot_SRR;
+      Real F_BSLF, F_BSRF, F_BSLR, F_BSRR;
+      Real F_SQLF, F_SQRF, F_SQLR, F_SQRR;
+      Real F_SLF,  F_SRF,  F_SLR,  F_SRR;
+      Real F_RAF,  F_RAR;
+    
+      // Chassis accels (planar) and coupled yaw/roll ddots
+      Real a_x, a_y_uf, a_y_ur, a_y_s;
+      Real rdot, pdot_s, psiddot, phiddot_s;
+      
       Real Pmech(start=0,fixed=false);          // [W] mechanical power
       Real Ploss(start=0,fixed=false);          // [W] resistive power loss
-      Real delta(start=0,fixed=false);          // [rad] steering input
       Real turn_radius(start=1000);             // [m] turning radius
       Integer rollover_detected(start=0);       // [-] rollover detection signal
       Real mx(start=0,fixed=false), my(start=0,fixed=false), mz(start=0,fixed=false); // [T] magnetic field measured from magnetometer
-      
-      // internal states
-      Real thr;                                       // [N*m] throttle value to each wheel shaft
-      Real vs_fl, vs_fr, vs_rl, vs_rr;                // [-] friction reduction magnitude
-      Real kappa_fl_bnd, kappa_fr_bnd, kappa_rl_bnd, kappa_rr_bnd;
-      Real alpha_fl_bnd, alpha_fr_bnd, alpha_rl_bnd, alpha_rr_bnd;
-      Real mu_fl, mu_fr, mu_rl, mu_rr;                // [-] maximum friction coefficient
-      Real z_fl, z_fr, z_rl, z_rr;                    // [-] tire force parameter
-      Real fz_fl, fz_fr, fz_rl, fz_rr;                // [-] tire force parameter
-      Real Fz_fl, Fz_fr, Fz_rl, Fz_rr;                // [N] normal force on wheels
-      Real Fx_fl, Fx_fr, Fx_rl, Fx_rr;                // [N] longitudinal force on wheels
-      Real Fy_fl, Fy_fr, Fy_rl, Fy_rr;                // [N] lateral force on wheel
-      Real vx_fl, vy_fl, vx_fr, vy_fr, vx_rl, vy_rl, vx_rr, vy_rr;                        // [m/s] tire velocity induced by vehicle motion
       
       // accelerometer specific force compensation
       Real specific_g[3](start={0.0, 0.0, Constants.g}, each fixed=false);      // [m/s^2] gravity specific force
@@ -570,166 +655,250 @@ package RoverExample
       Magnetometer mag;
       EMIVulnerability emi(A=A, B=B, Nw=Nw);
     
-    // updated: improved tire model eliminates the need for initial equations to make rover exceed speed threshold
-/*
-    initial equation
-      // note: if initialize the shaft speed and wheel speeds using vx value (directly using symbol vx), the initialization fails
-      vx = 1.0e-2;                                      // [m/s] initial forward velocity
-      omega_fl = 1.0e-2/r_tire;                         // [rad/s] initial front left wheel speed
-      omega_fr = 1.0e-2/r_tire;                         // [rad/s] initial front right wheel speed
-      omega_rl = 1.0e-2/r_tire;                         // [rad/s] initial rear left wheel speed
-      omega_rr = 1.0e-2/r_tire;                         // [rad/s] initial rear right wheel speed
-      omega = 1.0e-2/r_tire*gratio;                     // [rad/s] initial motor rotor shaft speed
-    */
-    
     equation
   
       // compute motor dynamics
-      Vq = sqrt(3/2)*Vs*clip(pre(D),1/(sqrt(3/2)*Vs)*(R_phi*b/Kt_q+Kb_q)*(0.001/r_tire*gratio),1);
-      der(Iq) = (Vq-R_phi*Iq-Kb_q*omega)/Le;
-      der(lambda) = omega;
-      when lambda > 2*Constants.PI then
-        reinit(lambda,lambda-2*Constants.PI);
+      Vq = sqrt(3/2)*Vs*clip(pre(D),1/(sqrt(3/2)*Vs)*(R_phi*b/Kt_q+Kb_q)*(0.001/r_wheel*gratio),1);
+      der(Iq) = (Vq-R_phi*Iq-Kb_q*omega_m)/Le;
+      der(lambda_m) = omega_m;
+      when lambda_m > 2*Constants.PI then
+        reinit(lambda_m,lambda_m-2*Constants.PI);
       end when;
-      der(omega) = (Kt_q*Iq-b*omega-4*thr)/J;
-      4*omega/gratio-(omega_fl+omega_fr+omega_rl+omega_rr) = 0;
+      der(omega_m) = (Kt_q*Iq-b*omega_m-torqueGain*((omega_m/gratio - omega_fl) + (omega_m/gratio - omega_fr) + (omega_m/gratio - omega_rl) + (omega_m/gratio - omega_rr)))/Jm;
 
       // compute servo dynamics
-      der(delta) = 1/tau_servo*(pre(delta_cmd)-delta);
-
-      // compute tire force using dugoff tire model with lagged slip ratio
-      der(kappa_fl) = -abs(vx+tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_fl+(r_tire*omega_fl-(vx+tw/2*r))/Lrelx;//(1+exp(scale*(abs(kappa_fl)-1.00)));
-      der(kappa_fr) = -abs(vx-tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_fr+(r_tire*omega_fr-(vx-tw/2*r))/Lrelx;//(1+exp(scale*(abs(kappa_fr)-1.00)));
-      der(kappa_rl) = -abs(vx+tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_rl+(r_tire*omega_rl-(vx+tw/2*r))/Lrelx;//(1+exp(scale*(abs(kappa_rl)-1.00)));
-      der(kappa_rr) = -abs(vx-tw/2*r)/clip(tanh(abs(vx)),0.001,1.0)/Lrelx*kappa_rr+(r_tire*omega_rr-(vx-tw/2*r))/Lrelx;      //(1+exp(scale*(abs(kappa_rr)-1.00)));
-      kappa_fl_bnd  = clip(kappa_fl,kappa_min,kappa_max);
-      kappa_fr_bnd  = clip(kappa_fr,kappa_min,kappa_max);
-      kappa_rl_bnd  = clip(kappa_rl,kappa_min,kappa_max);
-      kappa_rr_bnd  = clip(kappa_rr,kappa_min,kappa_max);
-      
-      vx_fl       =   cos(delta)*(vx+tw/2*r)+sin(delta)*(vy+l_front*r);
-      vy_fl       =   -sin(delta)*(vx+tw/2*r)+cos(delta)*(vy+l_front*r);
-      vx_fr       =   cos(delta)*(vx-tw/2*r)+sin(delta)*(vy+l_front*r);
-      vy_fr       =   -sin(delta)*(vx-tw/2*r)+cos(delta)*(vy+l_front*r);
-      vx_rl       =   (vx+tw/2*r);
-      vy_rl       =   (vy-l_rear*r);
-      vx_rr       =   (vx-tw/2*r);
-      vy_rr       =   (vy-l_rear*r);
-      
-      der(alpha_fl) = -abs(vx_fl)*tan(alpha_fl_bnd)/clip(tanh(abs(vx_fl)),0.001,1.0)/Lrely-tanh(abs(vy_fl))*vy_fl/Lrely;
-      der(alpha_fr) = -abs(vx_fr)*tan(alpha_fr_bnd)/clip(tanh(abs(vx_fr)),0.001,1.0)/Lrely-tanh(abs(vy_fr))*vy_fr/Lrely;
-      der(alpha_rl) = -abs(vx_rl)*tan(alpha_rl_bnd)/clip(tanh(abs(vx_rl)),0.001,1.0)/Lrely-tanh(abs(vy_rl))*vy_rl/Lrely;
-      der(alpha_rr) = -abs(vx_rr)*tan(alpha_rr_bnd)/clip(tanh(abs(vx_rr)),0.001,1.0)/Lrely-tanh(abs(vy_rr))*vy_rr/Lrely;
-      
-      alpha_fl_bnd  = clip(alpha_fl,alpha_min,alpha_max);
-      alpha_fr_bnd  = clip(alpha_fr,alpha_min,alpha_max);
-      alpha_rl_bnd  = clip(alpha_rl,alpha_min,alpha_max);
-      alpha_rr_bnd  = clip(alpha_rr,alpha_min,alpha_max);
-      
-      vs_fl = (vx+tw/2*r)*sqrt(kappa_fl_bnd^2+tan(alpha_fl_bnd)^2);
-      vs_fr = (vx-tw/2*r)*sqrt(kappa_fr_bnd^2+tan(alpha_fr_bnd)^2);
-      vs_rl = (vx+tw/2*r)*sqrt(kappa_rl_bnd^2+tan(alpha_rl_bnd)^2);
-      vs_rr = (vx-tw/2*r)*sqrt(kappa_rr_bnd^2+tan(alpha_rr_bnd)^2);
-      
-      mu_fl = clip(mu0*(1-As*vs_fl),0,mu0);
-      mu_fr = clip(mu0*(1-As*vs_fr),0,mu0);
-      mu_rl = clip(mu0*(1-As*vs_rl),0,mu0);
-      mu_rr = clip(mu0*(1-As*vs_rr),0,mu0);
-      
-      Fz_fl = mass_total*Constants.g*l_rear/(2*l_total)-0.5*(mass_unsprung_front*huf+mass_sprung*hs+mass_unsprung_rear*hur)/l_total*ax+ay/tw*(mass_sprung*l_rear*hs/l_total+mass_unsprung_front*huf)+1/2/tw*(-k_rllsp*phi-c_rllsp*p);
-      Fz_fr = mass_total*Constants.g*l_rear/(2*l_total)-0.5*(mass_unsprung_front*huf+mass_sprung*hs+mass_unsprung_rear*hur)/l_total*ax-ay/tw*(mass_sprung*l_rear*hs/l_total+mass_unsprung_front*huf)-1/2/tw*(-k_rllsp*phi-c_rllsp*p);
-      Fz_rl = mass_total*Constants.g*l_front/(2*l_total)+0.5*(mass_unsprung_front*huf+mass_sprung*hs+mass_unsprung_rear*hur)/l_total*ax+ay/tw*(mass_sprung*l_front*hs/l_total+mass_unsprung_rear*hur)+1/2/tw*(-k_rllsp*phi-c_rllsp*p);
-      Fz_rr = mass_total*Constants.g*l_front/(2*l_total)+0.5*(mass_unsprung_front*huf+mass_sprung*hs+mass_unsprung_rear*hur)/l_total*ax-ay/tw*(mass_sprung*l_front*hs/l_total+mass_unsprung_rear*hur)-1/2/tw*(-k_rllsp*phi-c_rllsp*p);
-      
-      z_fl = clip(mu_fl*Fz_fl*(1-kappa_fl_bnd)/(2*sqrt((c_kappa*kappa_fl_bnd)^2+(c_alpha*tan(alpha_fl_bnd))^2+Constants.eps)),z_min,z_max);  // revised
-      z_fr = clip(mu_fr*Fz_fr*(1-kappa_fr_bnd)/(2*sqrt((c_kappa*kappa_fr_bnd)^2+(c_alpha*tan(alpha_fr_bnd))^2+Constants.eps)),z_min,z_max);
-      z_rl = clip(mu_rl*Fz_rl*(1-kappa_rl_bnd)/(2*sqrt((c_kappa*kappa_rl_bnd)^2+(c_alpha*tan(alpha_rl_bnd))^2+Constants.eps)),z_min,z_max);
-      z_rr = clip(mu_rr*Fz_rr*(1-kappa_rr_bnd)/(2*sqrt((c_kappa*kappa_rr_bnd)^2+(c_alpha*tan(alpha_rr_bnd))^2+Constants.eps)),z_min,z_max);
-      
-      if z_fl < 1 then
-        fz_fl = z_fl*(2-z_fl);
-      else
-        fz_fl = 1;
-      end if;
-      
-      if z_fr < 1 then
-        fz_fr = z_fr*(2-z_fr);
-      else
-        fz_fr = 1;
-      end if;
-      
-      if z_rl < 1 then
-        fz_rl = z_rl*(2-z_rl);
-      else
-        fz_rl = 1;
-      end if;
-      
-      if z_rr < 1 then
-        fz_rr = z_rr*(2-z_rr);
-      else
-        fz_rr = 1;
-      end if;
-      
-      Fx_fl = c_kappa*kappa_fl_bnd/(1-kappa_fl_bnd)*fz_fl;
-      Fx_fr = c_kappa*kappa_fr_bnd/(1-kappa_fr_bnd)*fz_fr;
-      Fx_rl = c_kappa*kappa_rl_bnd/(1-kappa_rl_bnd)*fz_rl;
-      Fx_rr = c_kappa*kappa_rr_bnd/(1-kappa_rr_bnd)*fz_rr;
+      der(delta_f)   = deltadot_f;
+      der(deltadot_f)= ( (delta_cmd - delta_f) - k_scv*deltadot_f ) / (2*Iyy_wheel*k_scf);
     
-      Fy_fl = c_alpha*tan(alpha_fl_bnd)/(1-kappa_fl_bnd)*fz_fl;
-      Fy_fr = c_alpha*tan(alpha_fr_bnd)/(1-kappa_fr_bnd)*fz_fr;
-      Fy_rl = c_alpha*tan(alpha_rl_bnd)/(1-kappa_rl_bnd)*fz_rl;
-      Fy_rr = c_alpha*tan(alpha_rr_bnd)/(1-kappa_rr_bnd)*fz_rr;
-  
-      // kinematics (planar)
-      der(omega_fl) = 1/I_wheel*(thr-r_tire*Fx_fl);
-      der(omega_fr) = 1/I_wheel*(thr-r_tire*Fx_fr);
-      der(omega_rl) = 1/I_wheel*(thr-r_tire*Fx_rl);
-      der(omega_rr) = 1/I_wheel*(thr-r_tire*Fx_rr);
+      // Ackermann split (front), rear fixed
+      delta_fl = atan( tan(delta_f) / (1 + tw/(2*l_total)*tan(delta_f)) );
+      delta_fr = atan( tan(delta_f) / (1 - tw/(2*l_total)*tan(delta_f)) );
+      delta_rl = 0; delta_rr = 0;
     
-      der(x) = vx*cos(psi)-vy*sin(psi);
-      der(y) = vx*sin(psi)+vy*cos(psi);
-      der(z) = 0;
-      der(vx) = vy*r+ax;
-      der(vy) = -vx*r-(l_front*mass_unsprung_front-l_rear*mass_unsprung_rear)/mass_total*der(r)+ay;
-      der(vz) = 0;
-      ax = 1/mass_total*((Fx_fl*cos(-delta)+Fy_fl*sin(-delta))+(Fx_fr*cos(-delta)+Fy_fr*sin(-delta))+(Fx_rl*cos(0)+Fy_rl*sin(0))+(Fx_rr*cos(0)+Fy_rr*sin(0)));
-      ay = 1/mass_total*((-Fx_fl*sin(-delta)+Fy_fl*cos(-delta))+(-Fx_fr*sin(-delta)+Fy_fr*cos(-delta))+(-Fx_rl*sin(0)+Fy_rl*cos(0))+(-Fx_rr*sin(0)+Fy_rr*cos(0)));
-      az = 0;
-      der(phi) = p;
-      der(theta) = 0;
-      der(psi) = r;
-      der(p) = 1/I_xx*(-mass_sprung*ay*hs*cos(phi)+mass_sprung*Constants.g*hs*sin(phi)-k_rllsp*phi-c_rllsp*p);
-      der(q) = 0;
-      der(r) = 1/I_zz*(tw/2*(Fx_fl*cos(-delta)+Fy_fl*sin(-delta))-tw/2*(Fx_fr*cos(-delta)+Fy_fr*sin(-delta))+tw/2*(Fx_rl*cos(0)+Fy_rl*sin(0))-tw/2*(Fx_rr*cos(0)+Fy_rr*sin(0))+l_front*(-Fx_fl*sin(-delta)+Fy_fl*cos(-delta))+l_front*(-Fx_fr*sin(-delta)+Fy_fr*cos(-delta))-l_rear*(-Fx_rl*sin(0)+Fy_rl*cos(0))-l_rear*(-Fx_rr*sin(0)+Fy_rr*cos(0)));
-  
+      // ===== Tire normal forces (vertical tire spring/damper) =====
+      Fz_LF = mass_sprung*Constants.g*l_rear/(2*l_total) + mass_unsprung_front*Constants.g/2 + (z_uf + r_wheel*(cos(phi_uf)-1) - tw/2*sin(phi_uf))*k_zt + (w_uf - r_wheel*(sin(phi_uf)*p_uf) - tw/2*cos(phi_uf)*p_uf)*k_zd;
+      Fz_RF = mass_sprung*Constants.g*l_rear/(2*l_total) + mass_unsprung_front*Constants.g/2 + (z_uf + r_wheel*(cos(phi_uf)-1) + tw/2*sin(phi_uf))*k_zt + (w_uf - r_wheel*(sin(phi_uf)*p_uf) + tw/2*cos(phi_uf)*p_uf)*k_zd;
+      Fz_LR = mass_sprung*Constants.g*l_front/(2*l_total) + mass_unsprung_rear*Constants.g/2 + (z_ur + r_wheel*(cos(phi_ur)-1) - tw/2*sin(phi_ur))*k_zt + (w_ur - r_wheel*(sin(phi_uf)*p_uf) - tw/2*cos(phi_uf)*p_uf)*k_zd;
+      Fz_RR = mass_sprung*Constants.g*l_front/(2*l_total) + mass_unsprung_rear*Constants.g/2 + (z_ur + r_wheel*(cos(phi_ur)-1) + tw/2*sin(phi_ur))*k_zt + (w_ur - r_wheel*(sin(phi_uf)*p_uf) + tw/2*cos(phi_uf)*p_uf)*k_zd;
+    
+      // Floor at zero (contact loss)
+      //Fz_LF = max(0, Fz_LF);
+      //Fz_RF = max(0, Fz_RF);
+      //Fz_LR = max(0, Fz_LR);
+      //Fz_RR = max(0, Fz_RR);
+    
+      // ===== Wheel-plane velocities (project body + roll rates) =====
+      u_fl =  cos(delta_fl)*(u_t + tw/2*r_t) + sin(delta_fl)*(v_u + l_front*r_t - p_uf*(r_wheel - z_uf));
+      v_fl = -sin(delta_fl)*(u_t + tw/2*r_t) + cos(delta_fl)*(v_u + l_front*r_t - p_uf*(r_wheel - z_uf));
+      u_fr =  cos(delta_fr)*(u_t - tw/2*r_t) + sin(delta_fr)*(v_u + l_front*r_t - p_uf*(r_wheel - z_uf));
+      v_fr = -sin(delta_fr)*(u_t - tw/2*r_t) + cos(delta_fr)*(v_u + l_front*r_t - p_uf*(r_wheel - z_uf));
+      u_rl =  cos(delta_rl)*(u_t + tw/2*r_t) + sin(delta_rl)*(v_u - l_rear*r_t - p_ur*(r_wheel - z_ur));
+      v_rl = -sin(delta_rl)*(u_t + tw/2*r_t) + cos(delta_rl)*(v_u - l_rear*r_t - p_ur*(r_wheel - z_ur));
+      u_rr =  cos(delta_rr)*(u_t - tw/2*r_t) + sin(delta_rr)*(v_u - l_rear*r_t - p_ur*(r_wheel - z_ur));
+      v_rr = -sin(delta_rr)*(u_t - tw/2*r_t) + cos(delta_rr)*(v_u - l_rear*r_t - p_ur*(r_wheel - z_ur));
+    
+      // ===== Dugoff-style friction reduction and mu =====
+      vs_fl = u_t*sqrt(s_fl^2 + tan(alpha_fl)^2);
+      vs_fr = u_t*sqrt(s_fr^2 + tan(alpha_fr)^2);
+      vs_rl = u_t*sqrt(s_rl^2 + tan(alpha_rl)^2);
+      vs_rr = u_t*sqrt(s_rr^2 + tan(alpha_rr)^2);
+    
+      mu_fl = max(0, mu0*(1 - As*vs_fl));
+      mu_fr = max(0, mu0*(1 - As*vs_fr));
+      mu_rl = max(0, mu0*(1 - As*vs_rl));
+      mu_rr = max(0, mu0*(1 - As*vs_rr));
+    
+      // Non-dimensional force parameter κ and saturation fkappa
+      kappa_fl = clip( mu_fl*Fz_LF*(1 - s_fl) / (2*sqrt((c_s*s_fl)^2 + (c_alpha*tan(alpha_fl))^2) + Constants.eps), 0, 1e4);
+      kappa_fr = clip( mu_fr*Fz_RF*(1 - s_fr) / (2*sqrt((c_s*s_fr)^2 + (c_alpha*tan(alpha_fr))^2) + Constants.eps), 0, 1e4);
+      kappa_rl = clip( mu_rl*Fz_LR*(1 - s_rl) / (2*sqrt((c_s*s_rl)^2 + (c_alpha*tan(alpha_rl))^2) + Constants.eps), 0, 1e4);
+      kappa_rr = clip( mu_rr*Fz_RR*(1 - s_rr) / (2*sqrt((c_s*s_rr)^2 + (c_alpha*tan(alpha_rr))^2) + Constants.eps), 0, 1e4);
+    
+      fkappa_fl = if kappa_fl < 1 then kappa_fl*(2 - kappa_fl) else 1;
+      fkappa_fr = if kappa_fr < 1 then kappa_fr*(2 - kappa_fr) else 1;
+      fkappa_rl = if kappa_rl < 1 then kappa_rl*(2 - kappa_rl) else 1;
+      fkappa_rr = if kappa_rr < 1 then kappa_rr*(2 - kappa_rr) else 1;
+    
+      // Tire forces
+      Fx_LF = c_s*s_fl/(1 - s_fl)*fkappa_fl;
+      Fx_RF = c_s*s_fr/(1 - s_fr)*fkappa_fr;
+      Fx_LR = c_s*s_rl/(1 - s_rl)*fkappa_rl;
+      Fx_RR = c_s*s_rr/(1 - s_rr)*fkappa_rr;
+    
+      Fy_LF = c_alpha*tan(alpha_fl)/(1 - s_fl)*fkappa_fl;
+      Fy_RF = c_alpha*tan(alpha_fr)/(1 - s_fr)*fkappa_fr;
+      Fy_LR = c_alpha*tan(alpha_rl)/(1 - s_rl)*fkappa_rl;
+      Fy_RR = c_alpha*tan(alpha_rr)/(1 - s_rr)*fkappa_rr;
+    
+      // ===== Slip dynamics with relaxation lengths =====
+      der(s_fl) = -abs(u_fl)/clip(tanh(abs(u_t)), 0.001, 1.0)/Lrelx*s_fl + (r_wheel*omega_fl - u_fl)/Lrelx;
+      der(s_fr) = -abs(u_fr)/clip(tanh(abs(u_t)), 0.001, 1.0)/Lrelx*s_fr + (r_wheel*omega_fr - u_fr)/Lrelx;
+      der(s_rl) = -abs(u_rl)/clip(tanh(abs(u_t)), 0.001, 1.0)/Lrelx*s_rl + (r_wheel*omega_rl - u_rl)/Lrelx;
+      der(s_rr) = -abs(u_rr)/clip(tanh(abs(u_t)), 0.001, 1.0)/Lrelx*s_rr + (r_wheel*omega_rr - u_rr)/Lrelx;
+    
+      // clamp slip integration when outside bounds
+      //when (pre(s_fl) >= s_max) or (pre(s_fl) <= s_min) then reinit(s_fl, sat(s_fl, s_min, s_max)); end when;
+      //when (pre(s_fr) >= s_max) or (pre(s_fr) <= s_min) then reinit(s_fr, sat(s_fr, s_min, s_max)); end when;
+      //when (pre(s_rl) >= s_max) or (pre(s_rl) <= s_min) then reinit(s_rl, sat(s_rl, s_min, s_max)); end when;
+      //when (pre(s_rr) >= s_max) or (pre(s_rr) <= s_min) then reinit(s_rr, sat(s_rr, s_min, s_max)); end when;
+    
+      der(alpha_fl) = -abs(u_fl)*tan(alpha_fl)/Lrely - v_fl/Lrely;
+      der(alpha_fr) = -abs(u_fr)*tan(alpha_fr)/Lrely - v_fr/Lrely;
+      der(alpha_rl) = -abs(u_rl)*tan(alpha_rl)/Lrely - v_rl/Lrely;
+      der(alpha_rr) = -abs(u_rr)*tan(alpha_rr)/Lrely - v_rr/Lrely;
+    
+      //when (pre(alpha_fl) >= alpha_max) or (pre(alpha_fl) <= alpha_min) then reinit(alpha_fl, sat(alpha_fl, alpha_min, alpha_max)); end when;
+      //when (pre(alpha_fr) >= alpha_max) or (pre(alpha_fr) <= alpha_min) then reinit(alpha_fr, sat(alpha_fr, alpha_min, alpha_max)); end when;
+      //when (pre(alpha_rl) >= alpha_max) or (pre(alpha_rl) <= alpha_min) then reinit(alpha_rl, sat(alpha_rl, alpha_min, alpha_max)); end when;
+      //when (pre(alpha_rr) >= alpha_max) or (pre(alpha_rr) <= alpha_min) then reinit(alpha_rr, sat(alpha_rr, alpha_min, alpha_max)); end when;
+    
+      // ===== Wheel spin dynamics (motor → wheel, road torque) =====
+      der(omega_fl) = ( torqueGain*(omega_m/gratio - omega_fl) - r_wheel*Fx_LF )/Iyy_wheel;
+      der(omega_fr) = ( torqueGain*(omega_m/gratio - omega_fr) - r_wheel*Fx_RF )/Iyy_wheel;
+      der(omega_rl) = ( torqueGain*(omega_m/gratio - omega_rl) - r_wheel*Fx_LR )/Iyy_wheel;
+      der(omega_rr) = ( torqueGain*(omega_m/gratio - omega_rr) - r_wheel*Fx_RR )/Iyy_wheel;
+    
+      // ===== Suspension kinematics for spring/aux/bump & SU lateral link =====
+      z_SLF = (h_s - r_wheel + z_uf - z_s)/cos(phi_s) - h_s + r_wheel + l_front*theta_s + (phi_s - phi_uf)*(tw/2);
+      z_SRF = (h_s - r_wheel + z_uf - z_s)/cos(phi_s) - h_s + r_wheel + l_front*theta_s - (phi_s - phi_uf)*(tw/2);
+      z_SLR = (h_s - r_wheel + z_ur - z_s)/cos(phi_s) - h_s + r_wheel - l_rear*theta_s + (phi_s - phi_ur)*(tw/2);
+      z_SRR = (h_s - r_wheel + z_ur - z_s)/cos(phi_s) - h_s + r_wheel - l_rear*theta_s - (phi_s - phi_ur)*(tw/2);
+    
+      zdot_SLF = w_uf - w_s + l_front*q_s + (p_s - p_uf)*(tw/2);
+      zdot_SRF = w_uf - w_s + l_front*q_s - (p_s - p_uf)*(tw/2);
+      zdot_SLR = w_ur - w_s - l_rear*q_s + (p_s - p_ur)*(tw/2);
+      zdot_SRR = w_ur - w_s - l_rear*q_s - (p_s - p_ur)*(tw/2);
+    
+      // Bump stops
+      F_BSLF = if abs(z_SLF) <= h_bs then 0 else (-z_SLF + sign(z_SLF)*h_bs)*k_bs;
+      F_BSRF = if abs(z_SRF) <= h_bs then 0 else (-z_SRF + sign(z_SRF)*h_bs)*k_bs;
+      F_BSLR = if abs(z_SLR) <= h_bs then 0 else (-z_SLR + sign(z_SLR)*h_bs)*k_bs;
+      F_BSRR = if abs(z_SRR) <= h_bs then 0 else (-z_SRR + sign(z_SRR)*h_bs)*k_bs;
+    
+      // Squat/lift lateral components & aux roll bars
+      F_SQLF = (k_slf + z_SLF/l_saf)*(  Fy_LF*cos(phi_s) - Fz_LF*sin(phi_s)) - (min(Fx_LF,0)*k_sadf + max(Fx_LF,0)*k_sad2f);
+      F_SQRF = (k_slf + z_SRF/l_saf)*( -Fy_RF*cos(phi_s) + Fz_RF*sin(phi_s)) - (min(Fx_RF,0)*k_sadf + max(Fx_RF,0)*k_sad2f);
+      F_SQLR = (k_slr + z_SLR/l_sar)*(  Fy_LR*cos(phi_s) - Fz_LR*sin(phi_s)) + (min(Fx_LR,0)*k_sadr + max(Fx_LR,0)*k_sad2r);
+      F_SQRR = (k_slr + z_SRR/l_sar)*( -Fy_RR*cos(phi_s) + Fz_RR*sin(phi_s)) + (min(Fx_RR,0)*k_sadr + max(Fx_RR,0)*k_sad2r);
+    
+      F_SLF = mass_sprung*Constants.g*l_rear/(2*l_total) - z_SLF*k_sf - zdot_SLF*k_sdf + (phi_s - phi_uf)*k_tsf/tw_f + F_BSLF + F_SQLF;
+      F_SRF = mass_sprung*Constants.g*l_rear/(2*l_total) - z_SRF*k_sf - zdot_SRF*k_sdf - (phi_s - phi_uf)*k_tsf/tw_f + F_BSRF + F_SQRF;
+      F_SLR = mass_sprung*Constants.g*l_front/(2*l_total) - z_SLR*k_sr - zdot_SLR*k_sdr + (phi_s - phi_ur)*k_tsr/tw_r + F_BSLR + F_SQLR;
+      F_SRR = mass_sprung*Constants.g*l_front/(2*l_total) - z_SRR*k_sr - zdot_SRR*k_sdr - (phi_s - phi_ur)*k_tsr/tw_r + F_BSRR + F_SQRR;
+    
+      // SU lateral compliant pin links
+      // delta_yf, delta_yr and their rates:
+      // (match MATLAB expressions)
+      F_RAF = ( ((h_s - r_wheel + z_uf - z_s)*tan(phi_s) - (delta_y_suf))*cos(phi_s) - (h_raf - r_wheel)*sin(phi_s - phi_uf) )*k_ras
+              + ( ((h_s - r_wheel + z_uf - z_s)*cos(phi_s) - (delta_y_suf)*sin(phi_s))*p_s
+                  + (w_uf - w_s)*sin(phi_s) - delta_v_suf*cos(phi_s)
+                  - (h_raf - r_wheel)*cos(phi_s - phi_uf)*(p_s - p_uf) )*k_rad;
+    
+      F_RAR = ( ((h_s - r_wheel + z_ur - z_s)*tan(phi_s) - (delta_y_sur))*cos(phi_s) - (h_rar - r_wheel)*sin(phi_s - phi_ur) )*k_ras
+              + ( ((h_s - r_wheel + z_ur - z_s)*cos(phi_s) - (delta_y_sur)*sin(phi_s))*p_s
+                  + (w_ur - w_s)*sin(phi_s) - delta_v_sur*cos(phi_s)
+                  - (h_rar - r_wheel)*cos(phi_s - phi_ur)*(p_s - p_ur) )*k_rad;
+    
+      // ===== Planar chassis forces/accels =====
+      a_x = ( (Fx_LF*cos(delta_fl) - Fy_LF*sin(delta_fl)) + (Fx_RF*cos(delta_fr) - Fy_RF*sin(delta_fr))
+            + (Fx_LR*cos(delta_rl) - Fy_LR*sin(delta_rl)) + (Fx_RR*cos(delta_rr) - Fy_RR*sin(delta_rr)) )/mass_total;
+    
+      rdot = ( + tw/2*(Fx_LF*cos(delta_fl) - Fy_LF*sin(delta_fl)) - tw/2*(Fx_RF*cos(delta_fr) - Fy_RF*sin(delta_fr))
+               + tw/2*(Fx_LR*cos(delta_rl) - Fy_LR*sin(delta_rl)) - tw/2*(Fx_RR*cos(delta_rr) - Fy_RR*sin(delta_rr))
+               + l_front*(Fx_LF*sin(delta_fl) + Fy_LF*cos(delta_fl)) + l_front*(Fx_RF*sin(delta_fr) + Fy_RF*cos(delta_fr))
+               - l_rear *(Fx_LR*sin(delta_rl) + Fy_LR*cos(delta_rl)) - l_rear *(Fx_RR*sin(delta_rr) + Fy_RR*cos(delta_rr)) )/Izz_t;
+    
+      // Yaw–roll coupling (uses previous phiddot via algebraic; we couple directly as in MATLAB)
+      psiddot = -Ixz_s/Izz_t*phiddot_s + rdot;
+    
+      a_y_uf = ( (Fx_LF*sin(delta_fl) + Fy_LF*cos(delta_fl)) + (Fx_RF*sin(delta_fr) + Fy_RF*cos(delta_fr))
+               - F_RAF*cos(phi_s) - (F_SLF + F_SRF)*sin(phi_s) )/mass_unsprung_front;
+    
+      a_y_ur = ( (Fx_LR*sin(delta_rl) + Fy_LR*cos(delta_rl)) + (Fx_RR*sin(delta_rr) + Fy_RR*cos(delta_rr))
+               - F_RAR*cos(phi_s) - (F_SLR + F_SRR)*sin(phi_s) )/mass_unsprung_rear;
+    
+      a_y_s  = ( + F_RAF*cos(phi_s) + F_RAR*cos(phi_s)
+               + (F_SLF + F_SRF + F_SLR + F_SRR)*sin(phi_s) )/mass_sprung;
+    
+      // ===== Kinematics & Dynamics Integration =====
+      der(x_t)   =  u_t*cos(psi_t) - v_u*sin(psi_t);
+      der(u_t)   =  v_u*r_t + a_x;
+      der(psi_t) =  r_t;
+      der(r_t)   =  psiddot;
+      der(y_u)   =  u_t*sin(psi_t) + v_u*cos(psi_t);
+      der(v_u)   = -u_t*r_t + (mass_unsprung_front*a_y_uf + mass_unsprung_rear*a_y_ur)/(mass_unsprung_front + mass_unsprung_rear);
+    
+      der(delta_y_suf) = delta_v_suf;
+      der(delta_v_suf) = a_y_s + l_front*psiddot - a_y_uf;
+      der(delta_y_sur) = delta_v_sur;
+      der(delta_v_sur) = a_y_s - l_rear*psiddot - a_y_ur;
+    
+      der(z_uf) = w_uf;
+      der(w_uf) = Constants.g - (Fz_LF + Fz_RF + F_RAF*sin(phi_s) - (F_SLF + F_SRF)*cos(phi_s))/mass_unsprung_front;
+    
+      der(z_ur) = w_ur;
+      der(w_ur) = Constants.g - (Fz_LR + Fz_RR + F_RAR*sin(phi_s) - (F_SLR + F_SRR)*cos(phi_s))/mass_unsprung_rear;
+    
+      der(z_s)  = w_s;
+      der(w_s)  = Constants.g - ( -(F_RAF + F_RAR)*sin(phi_s) + (F_SLF + F_SRF + F_SLR + F_SRR)*cos(phi_s) )/mass_sprung;
+    
+      der(phi_uf) = p_uf;
+      der(p_uf)   = ( + F_SRF*(tw/2) - F_SLF*(tw/2) - F_RAF*(h_raf - r_wheel)
+                      + Fz_LF*( r_wheel*sin(phi_uf) + tw/2*cos(phi_uf) - k_lt*Fy_LF )
+                      - Fz_RF*( -r_wheel*sin(phi_uf) + tw/2*cos(phi_uf) + k_lt*Fy_RF )
+                      - (Fx_LF*sin(delta_fl) + Fy_LF*cos(delta_fl))*(r_wheel - z_uf)
+                      - (Fx_RF*sin(delta_fr) + Fy_RF*cos(delta_fr))*(r_wheel - z_uf) )/Ixx_uf;
+    
+      der(phi_ur) = p_ur;
+      der(p_ur)   = ( + F_SRR*(tw/2) - F_SLR*(tw/2) - F_RAR*(h_rar - r_wheel)
+                      + Fz_LR*( r_wheel*sin(phi_ur) + tw/2*cos(phi_ur) - k_lt*Fy_LR )
+                      - Fz_RR*( -r_wheel*sin(phi_ur) + tw/2*cos(phi_ur) + k_lt*Fy_RR )
+                      - (Fx_LR*sin(delta_rl) + Fy_LR*cos(delta_rl))*(r_wheel - z_ur)
+                      - (Fx_RR*sin(delta_rr) + Fy_RR*cos(delta_rr))*(r_wheel - z_ur) )/Ixx_ur;
+    
+      der(phi_s)  = p_s;
+    
+      pdot_s      = ( + F_SLF*(tw/2) + F_SLR*(tw/2) - F_SRF*(tw/2) - F_SRR*(tw/2)
+                       - F_RAF/cos(phi_s)*(h_s - z_s - r_wheel + z_uf - (h_raf - r_wheel)*cos(phi_uf))
+                       - F_RAR/cos(phi_s)*(h_s - z_s - r_wheel + z_ur - (h_rar - r_wheel)*cos(phi_ur)) ) / (10*Ixx_s);
+      phiddot_s   = -Ixz_s/Ixx_s*psiddot + pdot_s;
+      der(p_s)    = phiddot_s;
+    
+      der(theta_s)= q_s;
+      der(q_s)    = ( + l_front*(F_SLF + F_SRF) - l_rear*(F_SLR + F_SRR)
+                      + ( (Fx_LF*cos(delta_fl) - Fy_LF*sin(delta_fl))
+                        + (Fx_RF*cos(delta_fr) - Fy_RF*sin(delta_fr))
+                        + (Fx_LR*cos(delta_rl) - Fy_LR*sin(delta_rl))
+                        + (Fx_RR*cos(delta_rr) - Fy_RR*sin(delta_rr)) )*(h_s - z_s) )/Iyy_s;
+                        
       // compute mechanical power
-      Pmech = Kt_q*Iq*omega;
+      Pmech = Kt_q*Iq*omega_m;
       Ploss = Iq^2*R_phi;
   
       // accelerometer specific force
-      C_n2b = transpose(eul2rot({phi, theta, mod(psi + Constants.PI, 2*Constants.PI) - Constants.PI}));
+      C_n2b = transpose(eul2rot({phi_s, theta_s, mod(psi_t + Constants.PI, 2*Constants.PI) - Constants.PI}));
       for i in 1:3 loop
         specific_g[i] = C_n2b[i,3]*Constants.g;
       end for;
   
       // emi model inputs
       emi.Iq = Iq;
-      emi.lambda = lambda;
-      mag.phi = phi;
-      mag.theta = theta;
-      mag.psi = psi;
-      mx = mag.b_earth[1]+emi.b_wire[1];
-      my = mag.b_earth[2]+emi.b_wire[2];
-      mz = mag.b_earth[3]+emi.b_wire[3]; 
+      emi.lambda = lambda_m;
+      mag.phi = phi_s;
+      mag.theta = theta_s;
+      mag.psi = psi_t;
+      mx = mag.b_earth[1]+0*emi.b_wire[1];
+      my = mag.b_earth[2]+0*emi.b_wire[2];
+      mz = mag.b_earth[3]+0*emi.b_wire[3]; 
       
   // rollover check
-      when delta <> 0 then
-        turn_radius = clip(abs(l_total/tan(delta)),0,1000);
-      elsewhen delta == 0 then
+      when delta_f <> 0 then
+        turn_radius = clip(abs(l_total/tan(delta_f)),0,1000);
+      elsewhen delta_f == 0 then
         turn_radius = 1000;
       end when;
       
-      when Fz_fl <= 1.5 or Fz_fr <= 1.5 or Fz_rl <= 1.5 or Fz_rr <= 1.5 then
+      when Fz_LF <= 1.5 or Fz_RF <= 1.5 or Fz_LR <= 1.5 or Fz_RR <= 1.5 then
         rollover_detected = 1;
       end when;
       
