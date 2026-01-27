@@ -33,7 +33,6 @@ It integrates physical models for **rotor thrust**, **aerodynamic coupling**, an
 - Cyber-physical vulnerability assessment  
 - Multi-fidelity simulation studies  
 - Formal reachability and risk analysis  
-- Test
 ---
 
 ### Acknowledgement
