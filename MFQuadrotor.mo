@@ -15,7 +15,7 @@ package GSQuad
       // [sec] sensing frequency
       parameter Real sensor_sample_period = 0.005;
         // targeted acoustic attack model and parameters
-      parameter Real W = 100;                                     // [W] power of speaker
+      parameter Real W = 0;                                     // [W] power of speaker
       parameter Real dist = 0.01;                               // [m] distance to speaker
       parameter Real psi_ac = 80.0*Constants.d2r;               // [rad] speaker direction
       parameter Real w_ac = 15.0002e+3*2*Constants.pi;          // [rad/s] acoustic attack frequency
@@ -124,7 +124,7 @@ package GSQuad
       // setup controller type by chaning fidelity and load different controller
       parameter Integer fidelity = 1;
       EulerPID euler_pid(update_interval = update_period);
-      QuaternionPID quat_pid(update_interval = update_period);
+      //QuaternionPID quat_pid(update_interval = update_period);
       // input: sensor feedback from drone (refer to definitions in quadrotor model)
       Connectors.SensorBus sensor annotation(
         Placement(transformation(origin = {120.2, 6.375}, extent = {{-20.2, -12.625}, {20.2, 12.625}}), iconTransformation(origin = {-131, -61.125}, extent = {{-29, -18.125}, {29, 18.25}})));
@@ -142,7 +142,7 @@ package GSQuad
         Placement(transformation(origin = {-120.2, -61.625}, extent = {{-20.2, -12.625}, {20.2, 12.625}}), iconTransformation(origin = {131, 2.875}, extent = {{-29, -18.125}, {29, 18.125}})));
       Connectors.RealOutput pwm_rotor_cmd[4];
       // discrete buffers (internal)
-      Real pwm_rotor_cmd_buf[4](start={0.0,0.0,0.0,0.0}, each fixed=true);
+      //Real pwm_rotor_cmd_buf[4](start={pwm_min,pwm_min,pwm_min,pwm_min}, each fixed=true);
       
     equation
       connect(sensor.x_w_p_w, pos_w_p_w_fdbk[1]);
@@ -176,7 +176,11 @@ package GSQuad
       connect(control.pwm_2, pwm_rotor_cmd[2]);
       connect(control.pwm_3, pwm_rotor_cmd[3]);
       connect(control.pwm_4, pwm_rotor_cmd[4]);
-      pwm_rotor_cmd = pre(pwm_rotor_cmd_buf);
+      //pwm_rotor_cmd = pre(pwm_rotor_cmd_buf);
+    
+      for i in 1:4 loop
+        pwm_rotor_cmd[i] = pwm_min+(pwm_max-pwm_min)*pre(euler_pid.normalized_ctrl_input[i]);
+      end for;
     
     algorithm
 // algorithm models pwm sampling of ESC/servo
@@ -189,24 +193,29 @@ package GSQuad
           euler_pid.euler_wb_fdbk := euler_wb_fdbk;
           euler_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
           
-        elseif fidelity == 2 then
-          quat_pid.position_setpoint := position_setpoint;
-          quat_pid.yaw_setpoint := yaw_setpoint;
-          quat_pid.pos_w_p_w_fdbk := pos_w_p_w_fdbk;
-          quat_pid.vel_w_p_b_fdbk := vel_w_p_b_fdbk;
-          quat_pid.euler_wb_fdbk := euler_wb_fdbk;
-          quat_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
-          
+        //elseif fidelity == 2 then
+        //  quat_pid.position_setpoint := position_setpoint;
+        //  quat_pid.yaw_setpoint := yaw_setpoint;
+        //  quat_pid.pos_w_p_w_fdbk := pos_w_p_w_fdbk;
+        //  quat_pid.vel_w_p_b_fdbk := vel_w_p_b_fdbk;
+        //  quat_pid.euler_wb_fdbk := euler_wb_fdbk;
+        //  quat_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
+        
         end if;
+        
+        //for i in 1:4 loop
+        //  pwm_rotor_cmd_buf[i] := pwm_min+(pwm_max-pwm_min)*euler_pid.normalized_ctrl_input[i];
+        //end for;
+        
       end when;
       
       //when sample(0, update_period) then
       //  pwm_rotor_cmd_buf := fill(pwm_min,4)+(pwm_max-pwm_min).*euler_pid.normalized_ctrl_input;
       // end when;
       
-      when sample(0, update_period) then
-        pwm_rotor_cmd_buf := fill(pwm_min,4)+(pwm_max-pwm_min).*euler_pid.normalized_ctrl_input;
-      end when;
+      //when sample(0, update_period) then
+    
+      //end when;
       
       annotation(
         Diagram,
@@ -376,14 +385,14 @@ package GSQuad
       parameter Real Kp_x = 0.20;
       parameter Real Kp_y = 0.20;
       parameter Real Kp_z = 0.40;
-      parameter Real Kp_vx = 0.25;
-      parameter Real Ki_vx = 0.00;
+      parameter Real Kp_vx = 0.45;
+      parameter Real Ki_vx = 0.10;
       parameter Real Kd_vx = 0.00;
-      parameter Real Kp_vy = 0.25;
-      parameter Real Ki_vy = 0.00;
+      parameter Real Kp_vy = 0.45;
+      parameter Real Ki_vy = 0.10;
       parameter Real Kd_vy = 0.00;
-      parameter Real Kp_vz = 0.30;
-      parameter Real Ki_vz = 0.00;
+      parameter Real Kp_vz = 0.60;
+      parameter Real Ki_vz = 0.10;
       parameter Real Kd_vz = 0.00;
       parameter Real Kp_phi = 1.00;
       parameter Real Kp_the = 1.00;
@@ -467,8 +476,9 @@ package GSQuad
       parameter Real pinv_CA[4, 4] = {{0.2500, 1.0779, 1.0779, 10.2390}, {0.2500, -1.0779, 1.0779, -10.2390}, {0.2500, -1.0779, -1.0779, 10.2390}, {0.2500, 1.0779, -1.0779, -10.2390}};
       // [N/(rad/s)^2] thrust coefficient
       parameter Real k_eta = 1.7*5.570e-6;
+      
     equation
-
+    
     algorithm
       when sample(0, update_interval) then
         pos_error := position_setpoint - pos_w_p_w_fdbk;
@@ -499,8 +509,13 @@ package GSQuad
         
         thrust_target := pinv_CA*fm_target;
         omega_spd_sq_target := thrust_target./k_eta;
-        normalized_ctrl_input := (sqrt(omega_spd_sq_target)-fill(omega_rotor_min,4))./(omega_rotor_max-omega_rotor_min)+fill(omega_rotor_min,4);
+        for i in 1:4 loop
+          normalized_ctrl_input[i] := (sqrt(omega_spd_sq_target[i])-omega_rotor_min)/(omega_rotor_max-omega_rotor_min)+omega_rotor_min;
+        end for;
       end when;
+      
+    
+        
     end EulerPID;
 
     model QuaternionPID
@@ -559,7 +574,7 @@ package GSQuad
       // parameters
       parameter Real POSCONTROL_ACCEL_U_MSS = 2.5; // [m/s^2] default vertical acceleration
       parameter Real POSCONTROL_JERK_U_MSSS = 5.0; // [m/s^3] default vertical jerk
-      parameter Real ANGLE_MAX = 3000/100/180*pi;     // [rad] maximum angle command
+      // parameter Real ANGLE_MAX = 3000/100/180*pi;     // [rad] maximum angle command
       // input
       discrete Real pos_w_p_w_fdbk[3], vel_w_p_b_fdbk[3], quat_wb_fdbk[3], rate_wb_b_fdbk[3];
       discrete Real position_setpoint[3], yaw_setpoint;
@@ -998,6 +1013,6 @@ package GSQuad
       Line(points = {{-116, 0}, {-94, 0}, {-94, 33.5}, {-80, 33.5}, {-80, 34}}, thickness = 0.5));
     annotation(
       Diagram(coordinateSystem(extent = {{-200, 100}, {160, -40}})),
-      experiment(StartTime = 0.0, StopTime = 30.0, Tolerance = 1e-06, Interval = 0.005));
+      experiment(StartTime = 0.0, StopTime = 30, Tolerance = 1e-06, Interval = 0.005));
   end ExampleHovering;
 end GSQuad;

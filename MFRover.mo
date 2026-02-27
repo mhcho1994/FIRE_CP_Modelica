@@ -257,7 +257,7 @@ package RoverExample
       parameter Real delta_max = 25.28*Constants.d2r;           // [rad] max steering angle
       
       // targeted acoustic attack model and parameters
-      parameter Real W = 0;                                     // [W] power of speaker
+      parameter Real W = 100;                                     // [W] power of speaker
       parameter Real dist = 0.01;                               // [m] distance to speaker
       parameter Real psi_ac = 80.0*Constants.d2r;               // [rad] speaker direction
       parameter Real w_ac = 15.0002e+3*2*Constants.PI;          // [rad/s] acoustic attack frequency
@@ -1095,7 +1095,7 @@ end MadgwickFusionStep;
       parameter Real W = 0;                                     // [W] power of speaker
       parameter Real dist = 0.01;                               // [m] distance to speaker
       parameter Real p0 = 20*10^(-6);                           // [pa] reference pressure
-      parameter Real SPL = 10*log10(avoidzero(W/4/Constants.PI/dist^2/(1.21)/(343)/p0^2)); // [pa] sound pressure level
+      parameter Real SPL = 10*log10(avoidzero(W/4/Constants.PI/dist^2/(1.21)/(343)/p0^2));     // [pa] sound pressure level -> TO DO: Check 1.21 343 do not divide, multiply
       parameter Real A = p0*10^(SPL/20)*(2*dis_d)^2;            // [N] acoustic force acting on gyro, suppose area = (2*driving displacement)*(2*driving displacement)
       parameter Real psi_ac = 80.0*Constants.d2r;               // [rad] speaker direction
       parameter Real A_x = A*cos(psi_ac);                       // [N] acoustic force on sensing axis, reference - suggested value 4.0e-9
@@ -1120,7 +1120,7 @@ end MadgwickFusionStep;
       parameter Real phi_d = atan((2*zeta_d*cos(epsilon))/avoidzero(cos(epsilon)-1))+atan((2*zeta_s*w_2)/avoidzero(w_2^2-1))-atan(2*zeta_d);
       
       parameter Real X_ac = sqrt(X_acx^2+X_acy^2-2*X_acx*X_acy*cos(phi_ac-phi_y));
-      parameter Real X_d = sqrt(X_d1^2+X_d1^2-2*X_d1*X_d2*cos(phi_d-theta_d));
+      parameter Real X_d = sqrt(X_d1^2+X_d1^2-2*X_d1*X_d2*cos(phi_d-theta_d));  // TO DO: debug X_d1 -> X_d2
       parameter Real Phi_ac = atan((X_acx*sin(phi_0+phi_ac)-X_acy*sin(phi_0+phi_y))/avoidzero(X_acx*cos(phi_0+phi_ac)-X_acy*cos(phi_0+phi_y)));
       parameter Real Phi_d = atan((X_d1*sin(theta_d)-X_d2*sin(phi_d))/avoidzero(X_d1*cos(theta_d)-X_d2*cos(phi_d)));
       // output
