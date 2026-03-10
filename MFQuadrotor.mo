@@ -11,7 +11,7 @@ package GSQuad
       QuadLowFidelity quad_low;
       // parameters
       // [sec] PWM signal frequency
-      parameter Real actuator_sample_period = 0.005 if fidelity == 1;
+      parameter Real actuator_sample_period = 0.005; // if fidelity == 1;
       // [sec] sensing frequency
       parameter Real sensor_sample_period = 0.005;
         // targeted acoustic attack model and parameters
@@ -55,24 +55,39 @@ package GSQuad
       discrete Real rate_wb_b_buf[3](start={0.0,0.0,0.0}, each fixed=true);
       
     algorithm
-// pwm sampling of ESC/servo
+    // pwm sampling of ESC/servo
       when sample(0, actuator_sample_period) then
-        if fidelity == 1 then
+        if fidelity == 1 or fidelity == 2 then
           for idx in 1:4 loop
             quad_low.omega_rotor_cmd[idx] := (quad_low.omega_rotor_max - quad_low.omega_rotor_min)*(clip(pwm_rotor_cmd[idx], pwm_min, pwm_max) - pwm_min)/(pwm_max - pwm_min) + quad_low.omega_rotor_min;
           end for;
+        else
+          for idx in 1:4 loop
+            quad_low.omega_rotor_cmd[idx] := quad_low.omega_rotor_min; 
+          end for;
         end if;
       end when;
+      
+      
       when sample(0, sensor_sample_period) then
-        if fidelity == 1 then
+        if fidelity == 1 or fidelity == 2 then
           pos_w_p_w_buf := quad_low.position_w_p_w;
           vel_w_p_b_buf := quad_low.velocity_w_p_b;
           acc_w_p_b_buf := {0.0,0.0,0.0};
           quat_wb_buf := quad_low.quaternion_wb;
           euler_wb_buf := quat2eul(quad_low.quaternion_wb);
           rate_wb_b_buf := quad_low.rate_wb_b+gyroatk.omega_false;
+        else
+          pos_w_p_w_buf := {0.0,0.0,0.0};
+          vel_w_p_b_buf := {0.0,0.0,0.0};
+          acc_w_p_b_buf := {0.0,0.0,0.0};
+          quat_wb_buf := {1.0,0.0,0.0,0.0};
+          euler_wb_buf := {0.0,0.0,0.0};
+          rate_wb_b_buf := {0.0,0.0,0.0};
         end if;
       end when;
+      
+      
           
       equation 
       connect(control.pwm_1, pwm_rotor_cmd[1]);
@@ -121,10 +136,16 @@ package GSQuad
       // [-] minimum/maximum PWM
       parameter Real pwm_min = 1000;
       parameter Real pwm_max = 2000;
-      // setup controller type by chaning fidelity and load different controller
+      
+     // setup controller type by changing fidelity and load different controller
+      // 1 = EulerPID, 2 = QuaternionPID
       parameter Integer fidelity = 1;
+      
+      // At the moment, implement both controllers for switching
       EulerPID euler_pid(update_interval = update_period);
-      //QuaternionPID quat_pid(update_interval = update_period);
+      QuaternionPID quat_pid(update_interval = update_period);
+      
+    
       // input: sensor feedback from drone (refer to definitions in quadrotor model)
       Connectors.SensorBus sensor annotation(
         Placement(transformation(origin = {120.2, 6.375}, extent = {{-20.2, -12.625}, {20.2, 12.625}}), iconTransformation(origin = {-131, -61.125}, extent = {{-29, -18.125}, {29, 18.25}})));
@@ -178,44 +199,44 @@ package GSQuad
       connect(control.pwm_4, pwm_rotor_cmd[4]);
       //pwm_rotor_cmd = pre(pwm_rotor_cmd_buf);
     
-      for i in 1:4 loop
-        pwm_rotor_cmd[i] = pwm_min+(pwm_max-pwm_min)*pre(euler_pid.normalized_ctrl_input[i]);
-      end for;
+      if fidelity == 1 then
+        for i in 1:4 loop
+          pwm_rotor_cmd[i] = pwm_min + (pwm_max - pwm_min) * pre(euler_pid.normalized_ctrl_input[i]); 
+        end for;
+        
+      elseif fidelity == 2 then
+        for i in 1:4 loop
+          pwm_rotor_cmd[i] = pwm_min + (pwm_max - pwm_min) * pre(quat_pid.normalized_ctrl_input[i]);
+        end for;
+        
+      else      // Avoid error
+        for i in 1:4 loop
+          pwm_rotor_cmd[i] = pwm_min; 
+        end for;
+      end if;
     
     algorithm
-// algorithm models pwm sampling of ESC/servo
+    // algorithm models pwm sampling of ESC/servo
       when sample(0, update_period) then
-        if fidelity == 1 then
-          euler_pid.position_setpoint := position_setpoint;
-          euler_pid.yaw_setpoint := yaw_setpoint;
-          euler_pid.pos_w_p_w_fdbk := pos_w_p_w_fdbk;
-          euler_pid.vel_w_p_b_fdbk := vel_w_p_b_fdbk;
-          euler_pid.euler_wb_fdbk := euler_wb_fdbk;
-          euler_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
-          
-        //elseif fidelity == 2 then
-        //  quat_pid.position_setpoint := position_setpoint;
-        //  quat_pid.yaw_setpoint := yaw_setpoint;
-        //  quat_pid.pos_w_p_w_fdbk := pos_w_p_w_fdbk;
-        //  quat_pid.vel_w_p_b_fdbk := vel_w_p_b_fdbk;
-        //  quat_pid.euler_wb_fdbk := euler_wb_fdbk;
-        //  quat_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
+    //  fidelity == 1 case
+        euler_pid.position_setpoint := position_setpoint;
+        euler_pid.yaw_setpoint := yaw_setpoint;
+        euler_pid.pos_w_p_w_fdbk := pos_w_p_w_fdbk;
+        euler_pid.vel_w_p_b_fdbk := vel_w_p_b_fdbk;
+        euler_pid.euler_wb_fdbk := euler_wb_fdbk;
+        euler_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
         
-        end if;
-        
-        //for i in 1:4 loop
-        //  pwm_rotor_cmd_buf[i] := pwm_min+(pwm_max-pwm_min)*euler_pid.normalized_ctrl_input[i];
-        //end for;
+    //  fidelity ==2 case
+        quat_pid.position_setpoint := position_setpoint;
+        quat_pid.yaw_setpoint := yaw_setpoint;
+        quat_pid.pos_w_p_w_fdbk := pos_w_p_w_fdbk;
+        quat_pid.vel_w_p_b_fdbk := vel_w_p_b_fdbk;
+        quat_pid.quat_wb_fdbk := quat_wb_fdbk;
+        quat_pid.rate_wb_b_fdbk := rate_wb_b_fdbk;
         
       end when;
       
-      //when sample(0, update_period) then
-      //  pwm_rotor_cmd_buf := fill(pwm_min,4)+(pwm_max-pwm_min).*euler_pid.normalized_ctrl_input;
-      // end when;
       
-      //when sample(0, update_period) then
-    
-      //end when;
       
       annotation(
         Diagram,
@@ -510,7 +531,8 @@ package GSQuad
         thrust_target := pinv_CA*fm_target;
         omega_spd_sq_target := thrust_target./k_eta;
         for i in 1:4 loop
-          normalized_ctrl_input[i] := (sqrt(omega_spd_sq_target[i])-omega_rotor_min)/(omega_rotor_max-omega_rotor_min)+omega_rotor_min;
+    //      normalized_ctrl_input[i] := (sqrt(          omega_spd_sq_target[i]) - omega_rotor_min) / (omega_rotor_max - omega_rotor_min)+omega_rotor_min;
+          normalized_ctrl_input[i] := (sqrt(max(omega_spd_sq_target[i], 0.0)) - omega_rotor_min) / (omega_rotor_max - omega_rotor_min) + omega_rotor_min;
         end for;
       end when;
       
@@ -520,20 +542,24 @@ package GSQuad
 
     model QuaternionPID
       // note: Quaternion-based PID controller model, surrogate of Arducopter controller
-      
-      
       // load packages
       import GSQuad.Constants;
       import GSQuad.Utils.clip;
       import GSQuad.Utils.quat2rot;
       import GSQuad.Utils.eul2rot;
       import GSQuad.Utils.hatmap;
+      import GSQuad.Utils.quat2eul;
+      import GSQuad.Utils.quatinv;
+      import GSQuad.Utils.quatprod;
+      import GSQuad.Utils.axang2quat;
+      import GSQuad.Utils.eul2quat;
+      import GSQuad.Utils.cross3;
+      import GSQuad.Utils.dot;
+      import Modelica.Math.Vectors.norm;
       import Modelica.Math.sin;
       import Modelica.Math.cos;
       import Modelica.Math.atan;
       import Modelica.Math.acos;
-      import Modelica.Math.Matrices.inv;
-      
       
       // parameters
       // [rad/s] rotor maximum rotational speed
@@ -542,142 +568,180 @@ package GSQuad
       parameter Real omega_rotor_min = 0;
       // [sec] operational frequency
       parameter Real update_interval = 0.01;
-      // [-] gains
+      
       // outer loop control gains (PSC)
-      parameter Real PSC_POSXY_P = 1.0; // xy position P gain (≈ 1/s), higher -> faster XY position correction
-      parameter Real PSC_POSZ_P = 1.0; // z position P gain (≈ 1/s), higher -> tighter altitude hold / faster climb-rate command
-      parameter Real PSC_VELXY_P = 2.0; // xy velocity P gain (≈ 1/s), XY velocity error -> lateral accel (tilt) command
-      parameter Real PSC_VELXY_I = 1.0; // xy velocity I gain (≈ 1/s^2), removes steady XY drift (integrates error to accel cmd)
-      parameter Real PSC_VELXY_D = 0.5; // xy velocity D gain (≈ s^0), adds rate-of-change damping on velocity error
-      parameter Real PSC_VELZ_P = 5.0; // z velocity P gain (≈ 1/s), climb-rate error -> vertical accel/thrust command
-      parameter Real PSC_VELZ_I = 0.0; // z velocity I gain (≈ 1/s^2), remove bias on climb rate
-      parameter Real PSC_VELZ_D = 0.0; // z velcotiy D gain (≈ s^0), adds rate-of-change damping on climb-rate error
+      parameter Real PSC_POSXY_P = 0.20; 
+      parameter Real PSC_POSZ_P = 0.40; 
+      parameter Real PSC_VELXY_P = 0.45; 
+      parameter Real PSC_VELXY_I = 0.10; 
+      parameter Real PSC_VELXY_D = 0.00; 
+      parameter Real PSC_VELZ_P = 0.60; 
+      parameter Real PSC_VELZ_I = 0.10; 
+      parameter Real PSC_VELZ_D = 0.00;
+      
       // inner loop control gains (ATC)
-      parameter Real ATC_ANG_RLL_P = 4.5; // roll angle P gain (≈ 1/s) maps angle error -> desired body rate
-      parameter Real ATC_ANG_PIT_P = 4.5; // pitch angle P gain (≈ 1/s)
-      parameter Real ATC_ANG_YAW_P = 4.5; // yaw angle P gain (≈ 1/s)
-      parameter Real ATC_RAT_RLL_P = 0.135; // roll rate P gain maps body-rate error -> torque/motor mix command
-      parameter Real ATC_RAT_RLL_I = 0.135; // roll rate I gain
-      parameter Real ATC_RAT_RLL_D = 0.0036; // roll rate D gain
-      parameter Real ATC_RAT_PIT_P = 0.135; // pitch rate P gain
-      parameter Real ATC_RAT_PIT_I = 0.135; // pitch rate I gain
-      parameter Real ATC_RAT_PIT_D = 0.0036; // pitch rate D gain
-      parameter Real ATC_RAT_YAW_P = 0.30; // yaw rate P gain
-      parameter Real ATC_RAT_YAW_I = 0.02; // yaw rate I gain
-      parameter Real ATC_RAT_YAW_D = 0.00; // yaw rate D gain
+      parameter Real ATC_ANG_RLL_P = 1.00; 
+      parameter Real ATC_ANG_PIT_P = 1.00; 
+      parameter Real ATC_ANG_YAW_P = 0.80; 
+      parameter Real ATC_RAT_RLL_P = 1.60; 
+      parameter Real ATC_RAT_RLL_I = 0.00; 
+      parameter Real ATC_RAT_RLL_D = 0.60; 
+      parameter Real ATC_RAT_PIT_P = 1.60; 
+      parameter Real ATC_RAT_PIT_I = 0.00; 
+      parameter Real ATC_RAT_PIT_D = 0.60; 
+      parameter Real ATC_RAT_YAW_P = 2.00; 
+      parameter Real ATC_RAT_YAW_I = 0.00; 
+      parameter Real ATC_RAT_YAW_D = 0.80;
+      
+      
       // thrust/accel gains
-      parameter Real PSC_ACCZ_P = 0.5/10; // z acceleration P gain maps z acceleration error to collective/throttle, sets responsiveness of thrust to accel error
-      parameter Real PSC_ACCZ_I = 1.0/10; // z acceleration I gain removes hover bias and improves long-term altitude hold
-      parameter Real PSC_ACCZ_D = 0.0/10; // z acceleration D gain usually set to be zero to avoid noise effects on accel feedback
-      
-      
-      // parameters
-      parameter Real POSCONTROL_ACCEL_U_MSS = 2.5; // [m/s^2] default vertical acceleration
-      parameter Real POSCONTROL_JERK_U_MSSS = 5.0; // [m/s^3] default vertical jerk
-      // parameter Real ANGLE_MAX = 3000/100/180*pi;     // [rad] maximum angle command
+      parameter Real PSC_ACCZ_P = 0.5/10; 
+      parameter Real PSC_ACCZ_I = 1.0/10; 
+      parameter Real PSC_ACCZ_D = 0.0/10; 
+      parameter Real POSCONTROL_ACCEL_U_MSS = 2.5; 
+      parameter Real POSCONTROL_JERK_U_MSSS = 5.0; 
+    
+      // physical parameters
+      parameter Real mass = 0.942 + 4*0.15 + 1.072 + 4*0.037;
+      parameter Real Ixx = (1/12*(0.942 + 1.072)*(0.11^2 + 0.11^2)) + 4*(1/12*0.15*0.328^2*sin(45/180*Constants.pi)^2 + 0.15*(0.164^2*sin(45/180*Constants.pi)^2 + 0.025^2)) + 4*(1/12*0.037*(0.01^2 + 3*0.02^2) + 0.037*(0.328^2*sin(45/180*Constants.pi)^2 + 0.025^2));
+      parameter Real Iyy = (1/12*(0.942 + 1.072)*(0.11^2 + 0.28^2)) + 4*(1/12*0.15*0.328^2*sin(45/180*Constants.pi)^2 + 0.15*(0.164^2*sin(45/180*Constants.pi)^2 + 0.025^2)) + 4*(1/12*0.037*(0.01^2 + 3*0.02^2) + 0.037*(0.328^2*sin(45/180*Constants.pi)^2 + 0.025^2));
+      parameter Real Izz = (1/12*(0.942 + 1.072)*(0.11^2 + 0.28^2)) + 4*(1/3*0.15*0.328^2) + 4*(1/2*0.037*0.02^2 + 0.037*0.328^2);
+      parameter Real Ixy = 0.0;
+      parameter Real Iyz = 0.0;
+      parameter Real Ixz = 0.0;
+      parameter Real J[3, 3] = [Ixx, Ixy, Ixz; Ixy, Iyy, Iyz; Ixz, Iyz, Izz];
+      parameter Real pinv_CA[4, 4] = {{0.2500, 1.0779, 1.0779, 10.2390}, {0.2500, -1.0779, 1.0779, -10.2390}, {0.2500, -1.0779, -1.0779, 10.2390}, {0.2500, 1.0779, -1.0779, -10.2390}};
+      parameter Real k_eta = 1.7*5.570e-6;
+    
       // input
-      discrete Real pos_w_p_w_fdbk[3], vel_w_p_b_fdbk[3], quat_wb_fdbk[3], rate_wb_b_fdbk[3];
+      discrete Real pos_w_p_w_fdbk[3], vel_w_p_b_fdbk[3], quat_wb_fdbk[4], rate_wb_b_fdbk[3];
       discrete Real position_setpoint[3], yaw_setpoint;
     
-      
       // output
-      // [-] rotational speed command from ESC
       discrete Real normalized_ctrl_input[4](start={0,0,0,0}, each fixed=false);
       
-      
-      // states
-      // [m] desired position
-      discrete Real pos_desired[3];
-      // [m/s] desired velocity
-      discrete Real vel_desired[3];
-      // [m/s^2] desired acceleration
-      discrete Real acc_desired[3];
-    
-      // [m] position error
-    //  discrete Real pos_error[3];
-      // [m/s] velocity target
-    //  discrete Real vel_target[3];
-      // [m/s] velocity error
-    //  discrete Real vel_error[3];
-      // compute coordinate transformation matrix from w to b
-    //  discrete Real C_wb[3, 3](start = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, each fixed = false);
-      // [m] velocity error integral
-    //  discrete Real vel_error_i[3];
-      // [m/s] previous iteration velocity error
-    //  discrete Real vel_error_last[3];
-      // [m/s^2] velocity error derivative
-    //  discrete Real vel_error_d[3];
-      // [m/s^2] acceleration target
-    //  discrete Real acc_target[3];
-    //  discrete Real acc_z_target, acc_fwd_target, acc_rgt_target;
-      // [rad] attitude target
-    //  discrete Real roll_target, pitch_target, yaw_target;
-      // [rad] attitude_error
-    //  discrete Real att_error[3];
-      // [rad/s] rate target
-    //  discrete Real rate_target[3];
-      // [rad/s] rate error
-    //  discrete Real rate_error[3];
-      // [rad] angular rate error integral
-    //  discrete Real rate_error_i[3];
-      // [rad/s] previous iteration rate error
-    //  discrete Real rate_error_last[3];
-      // [rad/s^2] angular rate error derivative
-    //  discrete Real rate_error_d[3];
-      // [N, N*m] force/moment target in body coordinates
-    //  discrete Real force_target, moment_target[3];
-    //  discrete Real fm_target[4];
-      // [-] current body thrust vector direction (-Z direction of inertial coordinates represented in body coordinates)
-    //  discrete Real att_body_thrust_vec[3];
-      // [-] lean angle between inertial/body negative z-axis
-    //  discrete Real lean_angle;
-      // [-] required thrust of each rotor
-    //  discrete Real thrust_target[4];
-    //  discrete Real omega_spd_sq_target[4];
+      // states (additional variables for quaternion operations)
+      discrete Real pos_error[3];
+      discrete Real vel_target[3];
+      discrete Real vel_error[3];
+      discrete Real euler_wb_fdbk[3];
+      discrete Real C_wb[3, 3];
+      discrete Real vel_error_i[3](start={0,0,0}, each fixed=false);
+      discrete Real vel_error_last[3](start={0,0,0}, each fixed=false);
+      discrete Real vel_error_d[3];
+      discrete Real acc_target[3];
+      discrete Real acc_z_target, acc_fwd_target, acc_rgt_target;
+      discrete Real roll_target, pitch_target, yaw_target;
+      discrete Real attitude_target[4];
+      discrete Real att_target_thrust_vec[3], att_body_thrust_vec[3];
+      discrete Real thrust_vec_cross_i1[3], thrust_vec_cross_i2[3], thrust_vec_cross_b[3];
+      discrete Real thrust_error_angle;
+      discrete Real thrust_vector_correction[4];
+      discrete Real rp_error[3];
+      discrete Real heading_vec_correction_quat[4];
+      discrete Real y_error[3];
+      discrete Real att_error[3];
+      discrete Real rate_target[3], rate_error[3];
+      discrete Real rate_error_i[3](start={0,0,0}, each fixed=false);
+      discrete Real rate_error_last[3](start={0,0,0}, each fixed=false);
+      discrete Real rate_error_d[3];
+      discrete Real force_target, moment_target[3];
+      discrete Real fm_target[4];
+      discrete Real lean_angle;
+      discrete Real thrust_target[4], omega_spd_sq_target[4];
     
     equation
     
     algorithm
       when sample(0, update_interval) then
-        pos_desired := pos_desired+vel_desired*update_interval+0.5*acc_desired*update_interval^2;
-        vel_desired := vel_desired+acc_desired*update_interval;
-      acc_desired := {0.0,0.0,0.0};
-      //[sqrt_ctrl(vel_error_x,params.POSCONTROL_JERK_U_MSSS/params.POSCONTROL_JERK_U_MSSS,params.POSCONTROL_JERK_U_MSSS,params.dt_s);
-     //                    sqrt_ctrl(vel_error_y,params.POSCONTROL_JERK_U_MSSS/params.POSCONTROL_JERK_U_MSSS,params.POSCONTROL_JERK_U_MSSS,params.dt_s);
-     //                    sqrt_ctrl(vel_error_z,params.POSCONTROL_JERK_U_MSSS/params.POSCONTROL_JERK_U_MSSS,params.POSCONTROL_JERK_U_MSSS,params.dt_s)];
+        // 1. Position Control (PSC)
+        pos_error := position_setpoint - pos_w_p_w_fdbk;
+        vel_target := {PSC_POSXY_P, PSC_POSXY_P, PSC_POSZ_P} .* pos_error;
+    
+        // 2. Velocity Control (PSC)
+        euler_wb_fdbk := quat2eul(quat_wb_fdbk);
+        C_wb := transpose(eul2rot(euler_wb_fdbk));
         
+        vel_error := vel_target - transpose(C_wb)*vel_w_p_b_fdbk;
+        vel_error_i := vel_error_i + vel_error*update_interval;
+        vel_error_d := (vel_error - vel_error_last)/update_interval;
+        vel_error_last := vel_error;
         
-    //    pos_error := position_setpoint - pos_w_p_w_fdbk;
-    //    vel_target := {Kp_x, Kp_y, Kp_z}.*pos_error;
-    //    C_wb := transpose(eul2rot(euler_wb_fdbk));
-    //    vel_error := vel_target - transpose(C_wb)*vel_w_p_b_fdbk;
-    //    vel_error_i := vel_error_i + vel_error*update_interval;
-    //    vel_error_d := (vel_error - vel_error_last)/update_interval;
-    //    vel_error_last := vel_error;
-    //    acc_target := {Kp_vx, Kp_vy, Kp_vz}.*vel_error + {Ki_vx, Ki_vy, Ki_vz}.*vel_error_i + {Kd_vx, Kd_vy, Kd_vz}.*vel_error_d - {0.0, 0.0, Constants.g};
-    //    acc_z_target := -acc_target[3];
-    //    acc_fwd_target := acc_target[1]*cos(euler_wb_fdbk[3]) + acc_target[2]*sin(euler_wb_fdbk[3]);
-    //    acc_rgt_target := -acc_target[1]*sin(euler_wb_fdbk[3]) + acc_target[2]*cos(euler_wb_fdbk[3]);
-    //    pitch_target := atan(-acc_fwd_target/Constants.g);
-    //    roll_target := atan(acc_rgt_target*cos(pitch_target)/Constants.g);
-    //    yaw_target := yaw_setpoint;
-    //    att_error := {roll_target, pitch_target, yaw_target} - euler_wb_fdbk;
-    //    rate_target := {Kp_phi, Kp_the, Kp_psi}.*att_error;
-    //    rate_error := rate_target - rate_wb_b_fdbk;
-    //    rate_error_i := rate_error_i + rate_error*update_interval;
-    //    rate_error_d := (rate_error - rate_error_last)/update_interval;
-    //    rate_error_last := rate_error;
-    //    moment_target := J*({Kp_p, Kp_q, Kp_r}.*rate_error + {Ki_p, Ki_q, Ki_r}.*rate_error_i + {Kd_p, Kd_q, Kd_r}.*rate_error_d) + hatmap(rate_wb_b_fdbk)*(J*rate_wb_b_fdbk);
-    //    att_body_thrust_vec := C_wb*{0.0, 0.0, -1.0};
-    //    lean_angle := acos(clip({0.0, 0.0, -1.0}*att_body_thrust_vec, -1, 1));
-    //    force_target := mass*acc_z_target/cos(lean_angle);
-    //    fm_target := {force_target, moment_target[1], moment_target[2], moment_target[3]};
-    //    thrust_target := pinv_CA*fm_target;
-    //    omega_spd_sq_target := thrust_target./k_eta;
-    //    normalized_ctrl_input := (sqrt(omega_spd_sq_target)-fill(omega_rotor_min,4))./(omega_rotor_max-omega_rotor_min)+fill(omega_rotor_min,4);
-        normalized_ctrl_input := {0,0,0,0};
+        acc_target := {PSC_VELXY_P, PSC_VELXY_P, PSC_VELZ_P} .* vel_error 
+                    + {PSC_VELXY_I, PSC_VELXY_I, PSC_VELZ_I} .* vel_error_i 
+                    + {PSC_VELXY_D, PSC_VELXY_D, PSC_VELZ_D} .* vel_error_d 
+                    - {0.0, 0.0, Constants.g};
+    
+        // 3. Attitude Target Formulation
+        acc_z_target := -acc_target[3];
+        acc_fwd_target := acc_target[1]*cos(euler_wb_fdbk[3]) + acc_target[2]*sin(euler_wb_fdbk[3]);
+        acc_rgt_target := -acc_target[1]*sin(euler_wb_fdbk[3]) + acc_target[2]*cos(euler_wb_fdbk[3]);
+        
+        pitch_target := atan(-acc_fwd_target/Constants.g);
+        roll_target := atan(acc_rgt_target*cos(pitch_target)/Constants.g);
+        yaw_target := yaw_setpoint;
+    
+        // 4. Attitude Error Extraction
+        attitude_target := eul2quat({roll_target, pitch_target, yaw_target});
+        
+        // derive thrust vectors (opposite to the Z-axis in the inertial frame)
+    //    att_target_thrust_vec := quat2rot(quatinv(attitude_target)) * {0.0, 0.0, -1.0};
+    //    att_body_thrust_vec := quat2rot(quatinv(quat_wb_fdbk)) * {0.0, 0.0, -1.0};
+        att_target_thrust_vec := quat2rot(attitude_target) * {0.0, 0.0, -1.0};
+        att_body_thrust_vec := quat2rot(quat_wb_fdbk) * {0.0, 0.0, -1.0};
+        
+        // extract thrust error angle and rotation axis
+        thrust_vec_cross_i1 := cross3(att_body_thrust_vec, att_target_thrust_vec);
+        thrust_error_angle := acos(clip(dot(att_body_thrust_vec, att_target_thrust_vec), -1.0, 1.0));
+        
+        // prevent singularity (division by zero)
+        if norm(thrust_vec_cross_i1) < 1e-6 or thrust_error_angle < 1e-6 then
+          thrust_vec_cross_i2 := {0.0, 0.0, -1.0};
+        else
+          thrust_vec_cross_i2 := thrust_vec_cross_i1 / norm(thrust_vec_cross_i1);
+          thrust_vec_cross_b := quat2rot(quatinv(quat_wb_fdbk)) * thrust_vec_cross_i2;
+        end if;
+        
+        // convert inertial axis to body frame and generate correction quaternion
+    //    thrust_vec_cross_b := quat2rot(quat_wb_fdbk) * thrust_vec_cross_i2;
+        thrust_vector_correction := axang2quat(thrust_vec_cross_b, thrust_error_angle);
+        rp_error := quat2eul(thrust_vector_correction);
+        
+        // calculate yaw (heading) correction quaternion
+    //    heading_vec_correction_quat := quatprod(quatinv(thrust_vector_correction), quatprod(quat_wb_fdbk, quatinv(attitude_target)));
+    //    y_error := quat2eul(heading_vec_correction_quat);
+        
+        // q_error = q_current_inv * q_target
+        heading_vec_correction_quat := quatprod(quatinv(thrust_vector_correction), quatprod(quatinv(quat_wb_fdbk), attitude_target));
+        y_error := quat2eul(heading_vec_correction_quat);
+        
+        att_error := {rp_error[1], rp_error[2], y_error[3]};
+        rate_target := {ATC_ANG_RLL_P, ATC_ANG_PIT_P, ATC_ANG_YAW_P} .* att_error;
+    
+        // 5. Rate Control (ATC)
+        rate_error := rate_target - rate_wb_b_fdbk;
+        rate_error_i := rate_error_i + rate_error*update_interval;
+        rate_error_d := (rate_error - rate_error_last)/update_interval;
+        rate_error_last := rate_error;
+        
+        moment_target := J*({ATC_RAT_RLL_P, ATC_RAT_PIT_P, ATC_RAT_YAW_P} .* rate_error 
+                          + {ATC_RAT_RLL_I, ATC_RAT_PIT_I, ATC_RAT_YAW_I} .* rate_error_i 
+                          + {ATC_RAT_RLL_D, ATC_RAT_PIT_D, ATC_RAT_YAW_D} .* rate_error_d) 
+                       + hatmap(rate_wb_b_fdbk)*(J*rate_wb_b_fdbk);
+    
+        // 6. Thrust & Control Allocation
+        lean_angle := acos(clip({0.0, 0.0, -1.0} * (C_wb*{0.0, 0.0, -1.0}), -1.0, 1.0));
+        force_target := mass*acc_z_target/ max(cos(lean_angle), 0.1);
+        
+        fm_target := {force_target, moment_target[1], moment_target[2], moment_target[3]};
+        thrust_target := pinv_CA*fm_target;
+        omega_spd_sq_target := thrust_target ./ k_eta;
+        
+        for i in 1:4 loop
+          normalized_ctrl_input[i] := (sqrt(max(omega_spd_sq_target[i], 0.0)) - omega_rotor_min) / (omega_rotor_max - omega_rotor_min) + omega_rotor_min;
+        end for;
+    
       end when;
-
     end QuaternionPID;
 
     model GyroAcousticAtk
@@ -880,17 +944,28 @@ package GSQuad
 
     function quat2eul
       // note: euler angle represents same rotation as quaternion
-      // [-] load packages: sine and cosine
-      import Modelica.Math.atan;
+      
+      // load packages
+      import Modelica.Math.atan2; // use atan2 instead of atan for full quadrant resolution
       import Modelica.Math.asin;
-      // [-] input: quaternion
+      import GSQuad.Utils.clip;   // add clipping to prevent domain errors in asin
+      
+      // input: quaternion [w, x, y, z]
       input Real q[4];
-      // [rad] output: euler angle (3-2-1 rotation)
+      
+      // output: euler angle (3-2-1 rotation) -> [roll, pitch, yaw] in radians
       output Real eul[3];
+      
     algorithm
-      eul[1] := atan((2*q[3]*q[4] + 2*q[1]*q[2])/(2*q[1]^2 + 2*q[4]^2 - 1));
-      eul[2] := asin(-(2*q[2]*q[4] - 2*q[1]*q[3]));
-      eul[3] := atan((2*q[2]*q[3] + 2*q[1]*q[4])/(2*q[1]^2 + 2*q[2]^2 - 1));
+      // Roll (phi): computed using atan2(y, x)
+      eul[1] := atan2(2*(q[3]*q[4] + q[1]*q[2]), 2*(q[1]^2 + q[4]^2) - 1);
+      
+      // Pitch (theta): clip between -1.0 and 1.0 to prevent floating-point errors
+      eul[2] := asin(clip(2*(q[1]*q[3] - q[2]*q[4]), -1.0, 1.0));
+      
+      // Yaw (psi): computed using atan2(y, x)
+      eul[3] := atan2(2*(q[2]*q[3] + q[1]*q[4]), 2*(q[1]^2 + q[2]^2) - 1);
+      
     end quat2eul;
 
     function eul2rot
@@ -985,18 +1060,97 @@ package GSQuad
       end if;
       
     end avoidzero;
+
+    function quatinv
+      // note: quaternion inverse (conjugate for unit quaternions)
+      input Real q_in[4];
+      output Real q_out[4];
+    protected
+      Real norm_sq;
+    algorithm
+      norm_sq := q_in[1]^2 + q_in[2]^2 + q_in[3]^2 + q_in[4]^2;
+      
+      if norm_sq > 1e-8 then
+        q_out[1] :=  q_in[1] / norm_sq;
+        q_out[2] := -q_in[2] / norm_sq;
+        q_out[3] := -q_in[3] / norm_sq;
+        q_out[4] := -q_in[4] / norm_sq;
+      else
+        q_out := {1.0, 0.0, 0.0, 0.0}; // Fallback for zero quaternion
+      end if;
+    end quatinv;
+
+    function axang2quat
+      // note: converts axis-angle representation to quaternion
+      input Real axis[3];
+      input Real angle; // [rad]
+      output Real q_out[4];
+    protected
+      Real half_angle;
+      Real sin_half_angle;
+      Real axis_norm;
+    algorithm
+      axis_norm := sqrt(axis[1]^2 + axis[2]^2 + axis[3]^2);
+      half_angle := angle / 2.0;
+      sin_half_angle := Modelica.Math.sin(half_angle);
+    
+      q_out[1] := Modelica.Math.cos(half_angle);
+      
+      if axis_norm > 1e-8 then
+        q_out[2] := (axis[1] / axis_norm) * sin_half_angle;
+        q_out[3] := (axis[2] / axis_norm) * sin_half_angle;
+        q_out[4] := (axis[3] / axis_norm) * sin_half_angle;
+      else
+        q_out[2] := 0.0;
+        q_out[3] := 0.0;
+        q_out[4] := 0.0;
+      end if;
+    end axang2quat;
+
+    function eul2quat
+      // note: converts euler angles (roll, pitch, yaw) to quaternion (3-2-1 sequence)
+      input Real eul[3]; // [roll, pitch, yaw] in rad
+      output Real q_out[4];
+    protected
+      Real cr; Real sr;
+      Real cp; Real sp;
+      Real cy; Real sy;
+    algorithm
+      cr := Modelica.Math.cos(eul[1] / 2.0);
+      sr := Modelica.Math.sin(eul[1] / 2.0);
+      
+      cp := Modelica.Math.cos(eul[2] / 2.0);
+      sp := Modelica.Math.sin(eul[2] / 2.0);
+      
+      cy := Modelica.Math.cos(eul[3] / 2.0);
+      sy := Modelica.Math.sin(eul[3] / 2.0);
+    
+      q_out[1] := cr * cp * cy + sr * sp * sy;
+      q_out[2] := sr * cp * cy - cr * sp * sy;
+      q_out[3] := cr * sp * cy + sr * cp * sy;
+      q_out[4] := cr * cp * sy - sr * sp * cy;
+    end eul2quat;
+
+    function dot
+      input Real v1[3];
+      input Real v2[3];
+      output Real result;
+    algorithm
+      result := v1[1]*v2[1] + v1[2]*v2[2] + v1[3]*v2[3];
+    end dot;
     annotation(
       Icon);
   end Utils;
 
+
   model ExampleHovering
     // parameters
-    parameter Integer fidelity = 1 "Select fidelity level" annotation(
+    parameter Integer fidelity = 2 "Select fidelity level" annotation(
       choices(choice = 1 "Low-Fidelity", choice = 2 "High-Fidelity"));
     // load components
     Components.Quadrotor quadrotor(fidelity = fidelity) annotation(
       Placement(transformation(origin = {90, 40}, extent = {{-36, -36}, {36, 36}})));
-    Components.Controller controller annotation(
+    Components.Controller controller(fidelity = fidelity) annotation(
       Placement(transformation(origin = {-32, 38}, extent = {{-37, -37}, {37, 37}})));
     Components.Joystick joystick annotation(
       Placement(transformation(origin = {-162, 60}, extent = {{-35, -35}, {35, 35}})));
