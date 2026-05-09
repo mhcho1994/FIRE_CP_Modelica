@@ -1,0 +1,5 @@
+loadModel(Modelica);
+loadFile("package.mo");
+checkModel(FIRE_CP_Modelica_Update.Examples.SkywalkerX8SITLScenario);
+checkModel(FIRE_CP_Modelica_Update.Examples.R1RoverSITLScenario);
+getErrorString();
